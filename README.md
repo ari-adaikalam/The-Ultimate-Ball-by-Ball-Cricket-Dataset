@@ -247,6 +247,10 @@ Not every match has every Cricinfo field. Cricinfo did not record tracking for a
 - The text predictions are estimates. Their accuracy is 59 to 71% depending on the field, and the 2001 to 2013 line and length predictions cannot be tested directly.
 - The 4,200 matches with no Cricinfo commentary have no tracking and no predictions.
 
+## Citation
+
+Ari Adaikalam. (2026). The Ultimate Ball-by-Ball Cricket Dataset [Dataset]. Kaggle. https://doi.org/10.34740/kaggle/ds/7579263
+
 ## License
 
 The code is licensed under the MIT License, see the [LICENSE](LICENSE) file for details. The ball-by-ball and match data come from Cricsheet under the Open Data Commons Attribution License 1.0, so any public use of the dataset must credit Cricsheet and keep that licence notice.

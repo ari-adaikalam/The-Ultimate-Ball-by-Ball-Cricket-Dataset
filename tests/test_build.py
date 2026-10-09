@@ -55,7 +55,7 @@ def test_build_writes_the_three_files_with_the_planned_columns(data_folder):
     out = data_folder / "output"
     main = pd.read_csv(out / "ball_by_ball_data.csv")
     assert totals["rows"] == 6 and totals["matches"] == 2 and totals["captured"] == 1
-    assert main.columns.tolist() == build.FINAL_COLUMNS and len(build.FINAL_COLUMNS) == 43
+    assert main.columns.tolist() == build.FINAL_COLUMNS and len(build.FINAL_COLUMNS) == 46
     assert "venue" not in main.columns and "winner" not in main.columns
     assert not set(build.CRICINFO_COLUMNS) & set(main.columns)          # the tracking lives only in its own file
     matches = pd.read_csv(out / "matches.csv")

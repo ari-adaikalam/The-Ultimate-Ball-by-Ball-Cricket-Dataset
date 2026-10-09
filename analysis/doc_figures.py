@@ -5,6 +5,7 @@ Run: .venv/bin/python -m analysis.doc_figures
 import json
 import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -77,11 +78,21 @@ def tracking_figures(out) -> dict:
     }
 
 
+def snapshot_date() -> str | None:
+    """The day of the newest Cricsheet download the files were built from, written as 9 October 2026."""
+    zips = list((data_dir() / "cricsheet").glob("*_csv2.zip"))
+    if not zips:
+        return None
+    day = datetime.fromtimestamp(max(z.stat().st_mtime for z in zips), timezone.utc)
+    return f"{day.day} {day:%B %Y}"
+
+
 def figures(out=None) -> dict:
     out = out or data_dir() / "output"
     empty = pd.read_csv(out / "empty_matches.csv", usecols=["match_id"])
     era_rows, competition_rows = coverage_tables(out)
-    return {"file_rows": file_rows(out), "empty_matches": len(empty), "eras": era_rows, "competitions": competition_rows, **tracking_figures(out)}
+    return {"file_rows": file_rows(out), "empty_matches": len(empty), "eras": era_rows, "competitions": competition_rows,
+            "snapshot": snapshot_date(), **tracking_figures(out)}
 
 
 def n(value: int) -> str:
@@ -113,6 +124,8 @@ def fill_readme(text: str, f: dict) -> str:
     text = re.sub(r"averages \d+ when the side that batted first went on to win and \d+ when it lost", f"averages {f['first_innings_won']} when the side that batted first went on to win and {f['first_innings_lost']} when it lost", text)
     text = re.sub(r"\d+% of fours and sixes land beyond 0\.9 of the way to the boundary, against [\d% to]+ in later matches", f"{f['boundary_beyond_old']}% of fours and sixes land beyond 0.9 of the way to the boundary, against {percent_range(f['boundary_beyond_later'])} in later matches", text)
     text = re.sub(r"compared \(\d+% against \d+%\)", f"compared ({f['same_ground_old']}% against {f['same_ground_new']}%)", text)
+    if f.get("snapshot"):
+        text = re.sub(r"built from Cricsheet's downloads of [^.]+\.", f"built from Cricsheet's downloads of {f['snapshot']}.", text)
     low, high = f["shot_named_low"], f["shot_named_high"]
     shot = f"Shot names are filled for {low}% of tracked balls in every era." if low == high else f"Shot names are filled for {low}% to {high}% of tracked balls, depending on the era."
     return re.sub(r"Shot names are filled for [^.]*\.", shot, text)

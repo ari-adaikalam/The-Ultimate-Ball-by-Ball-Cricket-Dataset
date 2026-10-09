@@ -6,7 +6,7 @@
 
 - **One row per ball**, joined on `match_id`, `innings` and `delivery_number`. A row exists if at least one of the four fields has a prediction, and the others can be empty.
 - **Labels** are always Cricinfo's own: five for line, six for length, the shot names of the match's era (2001 to 2013 or 2014 on), and the eight direction names.
-- **`*_confidence`** is the chance, from 0 to 1, that the label matches what Cricinfo would have recorded. It was calibrated on matches the model never saw. A prediction at 0.7 matched Cricinfo about 70% of the time.
+- **`*_confidence`** is the estimated chance, from 0 to 1, that the label matches what Cricinfo would have recorded. It is measured on matches the model never saw, where predictions at 0.7 matched Cricinfo about 70% of the time. Treat it as a rate across many balls.
 - **`*_explicit`** is 1 when the commentary names that label outright and no other, using the phrases in [phrase_meanings.md](phrase_meanings.md). The label still comes from the model. An explicit prediction is right more often than the average prediction.
 - **A cell is empty** where Cricinfo has a value, where the ball has no commentary text, or, for direction, where the model judges that the ball was not hit.
 - **Line and length for 2001 to 2013** have confidences lowered by 2.2 and 5.6 points, because Cricinfo has no values there to test against.
@@ -93,6 +93,16 @@ Three scripts in `analysis/` maintain the table. `phrase_candidates.py` lists th
 ## Fixed phrase tokens
 
 The phrase tokens a model reads are frozen in `analysis/unit_phrases.txt` and stored inside each saved model, so scoring always reads the text the way the model was trained.
+
+## Results by label
+
+[predictions_per_class.md](predictions_per_class.md) splits each model's accuracy by Cricinfo label, with the number of test balls, precision, recall and, for line, length and direction, the full confusion matrix. Three things stand out.
+
+- **Line.** The two wide labels are rarely found. Cricinfo's "wide outside offstump" is labelled correctly on 10% of balls and "wide down leg" on 3%. Most get the plain label: 86% of the wide outside offstump balls are labelled "outside offstump", and 60% of the wide down leg balls "down leg". A prediction of "outside offstump" can therefore be a wide.
+- **Length.** The models lean toward "good length", the most common label. Cricinfo's "full" balls get "good length" on 51% of balls, and its "short of a good length" balls on 45%. Yorkers are labelled "full" on 31%.
+- **Direction.** Mistakes sit between neighbouring zones. Cricinfo's mid off balls get "cover" on 34% of balls, fine leg balls get "square leg" on 37%, and point balls get "cover" on 30%. The "none" class, a ball that was not hit, is found on 94% to 97% of those balls and is right on 85% to 92% of the times it is predicted.
+
+The shares above are for the model that also reads Cricinfo's other fields. The text-only model, which makes most predictions, is a little lower on every label and its numbers are in the same page.
 
 ## Limits
 

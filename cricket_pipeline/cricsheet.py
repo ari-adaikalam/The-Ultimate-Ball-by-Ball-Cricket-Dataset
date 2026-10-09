@@ -63,7 +63,7 @@ def match_ids(archive: zipfile.ZipFile) -> set[int]:
 def read_match(archive: zipfile.ZipFile, match_id: int) -> tuple[pd.DataFrame, list[str]]:
     """Return the ball-by-ball rows and the raw lines of the info file for one match."""
     with archive.open(f"{match_id}.csv") as handle:
-        balls = pd.read_csv(handle, dtype={"season": str})
+        balls = pd.read_csv(handle, dtype={"season": str, "ball": str})       # as text, so 4.10 is not read as 4.1
     with archive.open(f"{match_id}_info.csv") as handle:
         info_lines = io.TextIOWrapper(handle, encoding="utf-8").readlines()
     return balls, info_lines

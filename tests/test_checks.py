@@ -1,0 +1,127 @@
+import pandas as pd
+
+from cricket_pipeline import checks
+
+
+def ball_frame(rows):
+    columns = ["match_id", "innings", "delivery_number", "scorecard_ball", "over", "ball_in_over", "wides", "striker", "striker balls faced"]
+    return pd.DataFrame(rows, columns=columns)
+
+
+GOOD = [
+    (1, 1, 1, 0.1, 0, 1, 1.0, "A", 0),
+    (1, 1, 2, 0.2, 0, 2, None, "A", 1),
+    (1, 1, 3, 0.3, 0, 3, None, "B", 1),
+    (1, 2, 1, 0.1, 0, 1, None, "A", 1),
+]
+
+
+def test_a_repeated_key_is_a_problem():
+    frame = ball_frame(GOOD)
+    assert checks.duplicate_keys(frame, checks.KEY, "the ball file") is None
+    frame.loc[1, "delivery_number"] = 1
+    assert "not unique" in checks.duplicate_keys(frame, checks.KEY, "the ball file")
+
+
+def test_deliveries_must_run_from_one_without_gaps():
+    frame = ball_frame(GOOD)
+    assert checks.delivery_numbers(frame) is None
+    frame.loc[2, "delivery_number"] = 5
+    assert "1 to n" in checks.delivery_numbers(frame)
+
+
+def over_rows(positions, over=4, scorecard=4.1):
+    return [(1, 1, i + 1, scorecard, over, p, None, "A", i + 1) for i, p in enumerate(positions)]
+
+
+def test_the_tenth_delivery_of_an_over_is_told_from_the_first():
+    assert checks.over_and_position(ball_frame(over_rows(range(1, 12)))) is None
+
+
+def test_two_deliveries_with_the_same_over_and_position_are_a_problem():
+    assert "share an over" in checks.over_and_position(ball_frame(over_rows([1, 2, 2])))
+
+
+def test_the_position_must_count_on_by_one_inside_an_over_and_restart_in_the_next():
+    assert "count 1, 2, 3" in checks.over_and_position(ball_frame(over_rows([1, 3])))
+    rows = over_rows([1, 2]) + [(1, 1, 3, 5.1, 5, 3, None, "A", 3)]            # a new over that does not restart at 1
+    assert "count 1, 2, 3" in checks.over_and_position(ball_frame(rows))
+    rows = over_rows([1, 2]) + [(1, 1, 3, 5.1, 5, 1, None, "A", 3)]
+    assert checks.over_and_position(ball_frame(rows)) is None
+
+
+def test_over_may_not_go_backwards_and_must_agree_with_scorecard_ball():
+    rows = over_rows([1]) + [(1, 1, 2, 3.1, 3, 1, None, "A", 2)]
+    assert "backwards" in checks.over_and_position(ball_frame(rows))
+    assert "scorecard_ball" in checks.over_and_position(ball_frame(over_rows([1, 2], over=4, scorecard=3.2)))
+
+
+def test_balls_faced_does_not_count_wides_and_restarts_each_innings():
+    assert checks.balls_faced(ball_frame(GOOD)) is None
+    wrong = ball_frame(GOOD)
+    wrong.loc[0, "striker balls faced"] = 1                 # counted the wide
+    assert "non-wide" in checks.balls_faced(wrong)
+    carried = ball_frame(GOOD)
+    carried.loc[3, "striker balls faced"] = 3               # carried over from innings 1
+    assert "non-wide" in checks.balls_faced(carried)
+
+
+def test_a_child_row_without_a_parent_is_a_problem():
+    parent = pd.DataFrame({"match_id": [1], "innings": [1], "delivery_number": [1]})
+    child = pd.DataFrame({"match_id": [1, 1], "innings": [1, 1], "delivery_number": [1, 9]})
+    assert checks.missing_references(child, parent, checks.KEY, "tracking rows") == "1 tracking rows have no match in the parent file"
+    assert checks.missing_references(child.iloc[:1], parent, checks.KEY, "tracking rows") is None
+
+
+def test_unknown_player_ids_are_found_and_missing_ids_are_not_errors():
+    ball = pd.DataFrame({"striker_id": ["a", None, "z"], "bowler_id": ["a", "a", "a"]})
+    players = pd.DataFrame({"player_id": ["a"]})
+    assert "1 striker or bowler ids" in checks.unknown_ids(ball, players)
+    assert checks.unknown_ids(ball.iloc[:2], players) is None
+
+
+def test_match_sets_and_coverage_rows_must_agree():
+    ball = pd.DataFrame({"match_id": [1, 1, 2]})
+    assert checks.match_sets(ball, pd.DataFrame({"match_id": [1, 2]})) is None
+    assert "differ" in checks.match_sets(ball, pd.DataFrame({"match_id": [1, 3]}))
+    assert checks.coverage_rows(ball, pd.DataFrame({"match_id": [1, 2], "rows": [2, 1]})) is None
+    assert "differ" in checks.coverage_rows(ball, pd.DataFrame({"match_id": [1, 2], "rows": [2, 5]}))
+
+
+def test_a_prediction_on_a_tracked_field_is_a_problem():
+    key = {"match_id": [1], "innings": [1], "delivery_number": [1]}
+    predictions = pd.DataFrame({**key, "line": ["on the stumps"], "length": [None], "shot": [None], "direction": [None]})
+    tracking = pd.DataFrame({**key, "ball_line": [None], "ball_length": ["full"], "shot_played": [None], "shot_direction": [None]})
+    assert checks.predictions_clear_of_tracking(predictions, tracking) is None       # different fields on the same ball is fine
+    tracking["ball_line"] = ["outside offstump"]
+    assert "1 predictions sit" in checks.predictions_clear_of_tracking(predictions, tracking)
+
+
+def test_the_whole_run_passes_on_a_small_good_folder_and_fails_when_a_file_is_wrong(tmp_path):
+    ball = ball_frame(GOOD).assign(striker_id=["a", "a", "b", "a"], bowler_id=["c", "c", "c", "c"])
+    ball.to_csv(tmp_path / "ball_by_ball_data.csv", index=False)
+    pd.DataFrame({"player_id": ["a", "b", "c"]}).to_csv(tmp_path / "players.csv", index=False)
+    pd.DataFrame({"match_id": [1]}).to_csv(tmp_path / "matches.csv", index=False)
+    pd.DataFrame({"match_id": [1], "rows": [4]}).to_csv(tmp_path / "coverage_report.csv", index=False)
+    report = checks.run_checks(tmp_path)
+    assert report.problems == [] and len(report.passed) >= 8
+    pd.DataFrame({"match_id": [1], "rows": [9]}).to_csv(tmp_path / "coverage_report.csv", index=False)
+    assert any("coverage_report" in p for p in checks.run_checks(tmp_path).problems)
+    assert checks.run(tmp_path) == 1
+
+
+def test_a_missing_ball_file_is_reported(tmp_path):
+    assert checks.run_checks(tmp_path).problems == ["ball_by_ball_data.csv is missing"]
+
+
+def legal_frame(rows):
+    return pd.DataFrame(rows, columns=["match_id", "innings", "delivery_number", "scorecard_ball", "wides", "noballs", "is_legal_delivery"])
+
+
+def test_the_legal_flag_must_match_wides_and_noballs_and_legal_balls_must_be_unique():
+    rows = [(1, 1, 1, 0.1, 1.0, None, False), (1, 1, 2, 0.1, None, 1.0, False), (1, 1, 3, 0.1, None, None, True), (1, 1, 4, 0.2, None, None, True)]
+    assert checks.legal_deliveries(legal_frame(rows)) is None
+    wrong = [r[:6] + (True,) if r[0:3] == (1, 1, 1) else r for r in rows]                       # a wide marked legal
+    assert "disagrees" in checks.legal_deliveries(legal_frame(wrong))
+    shared = rows[:3] + [(1, 1, 4, 0.1, None, None, True)]                                       # two legal deliveries with the same scorecard_ball
+    assert "share a scorecard_ball" in checks.legal_deliveries(legal_frame(shared))

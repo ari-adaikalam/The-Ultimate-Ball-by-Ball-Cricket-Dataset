@@ -7,6 +7,7 @@ FIGURES = {
     "competitions": [("Tests", 500, 53, 53, 98, 71, 0), ("IPL", 400, 68, 68, 100, 84, 100)],
     "first_innings_won": 65, "first_innings_lost": 40, "boundary_beyond_old": 87, "boundary_beyond_later": [99],
     "same_ground_old": 86, "same_ground_new": 99, "shot_named_low": 99, "shot_named_high": 99, "super_over_timestamps": 9,
+    "snapshot": "3 January 2027",
 }
 
 README = """| File | One row per | Rows |
@@ -27,6 +28,7 @@ README = """| File | One row per | Rows |
 - 88% of fours and sixes land beyond 0.9 of the way to the boundary, against 98% to 100% in later matches. The gap stays when only grounds that appear in both periods are compared (88% against 100%). Shot names are filled for 95% to 99% of tracked balls, depending on the era.
 - It averages 64 when the side that batted first went on to win and 39 when it lost.
 - The 4,200 matches with no Cricinfo commentary have no tracking.
+The files are a snapshot built from Cricsheet's downloads of 9 October 2026. On Kaggle, more.
 """
 
 
@@ -43,6 +45,7 @@ def test_tables_and_sentences_take_the_new_figures():
     assert "87% of fours and sixes land beyond 0.9 of the way to the boundary, against 99% in later matches" in out
     assert "compared (86% against 99%)" in out
     assert "Shot names are filled for 99% of tracked balls in every era." in out
+    assert "built from Cricsheet's downloads of 3 January 2027." in out
 
 
 def test_filling_twice_changes_nothing():

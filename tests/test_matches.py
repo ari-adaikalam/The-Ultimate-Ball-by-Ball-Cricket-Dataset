@@ -5,9 +5,11 @@ from cricket_pipeline.config import Source
 from cricket_pipeline.matches import (
     CRICSHEET_COLUMNS,
     RAW_COLUMNS,
+    add_ball_columns,
     add_running_stats,
     build_match_rows,
     parse_info,
+    split_ball,
 )
 
 SOURCE = Source("ipl", "T20", "Fran(IPL)")
@@ -16,6 +18,8 @@ SOURCE = Source("ipl", "T20", "Fran(IPL)")
 def make_balls(rows):
     """Build a ball-by-ball frame with only the columns a test cares about filled in."""
     frame = pd.DataFrame(rows)
+    if "innings" not in frame.columns:
+        frame["innings"] = 1
     for column in RAW_COLUMNS:
         if column not in frame.columns:
             frame[column] = None
@@ -47,11 +51,11 @@ class TestParseInfo:
             "info,player_of_match,B Singh\n",
         ])
         assert info["player_of_match"] == "A Kumar"
-        assert info["player_of_match.1"] == "B Singh"
+        assert info["player_of_match_2"] == "B Singh"
 
     def test_single_player_of_match_leaves_second_column_empty(self):
         info = parse_info(["info,player_of_match,A Kumar\n"])
-        assert info["player_of_match.1"] is None
+        assert info["player_of_match_2"] is None
 
     def test_missing_fields_are_none(self):
         info = parse_info(["info,gender,female\n"])
@@ -70,16 +74,49 @@ class TestParseInfo:
 
 
 class TestRunningStats:
-    def test_striker_totals_build_up_and_wides_count_as_balls_faced(self):
+    def test_striker_totals_build_up_and_a_wide_is_not_a_ball_faced(self):
         balls = make_balls([
             {"striker": "A", "runs_off_bat": 4},
-            {"striker": "A", "runs_off_bat": 0},  # a wide is a row too, and counts
+            {"striker": "A", "runs_off_bat": 0, "wides": 1},  # a wide is a row, but not a ball faced
             {"striker": "B", "runs_off_bat": 1},
             {"striker": "A", "runs_off_bat": 6},
         ])
         result = add_running_stats(balls)
-        assert result["striker balls faced"].tolist() == [1, 2, 1, 3]
+        assert result["striker balls faced"].tolist() == [1, 1, 1, 2]
         assert result["total striker runs"].tolist() == [4, 4, 1, 10]
+
+    def test_a_no_ball_and_byes_are_balls_faced(self):
+        balls = make_balls([
+            {"striker": "A", "runs_off_bat": 0, "noballs": 1},
+            {"striker": "A", "runs_off_bat": 0, "byes": 2},
+            {"striker": "A", "runs_off_bat": 0, "legbyes": 1},
+        ])
+        assert add_running_stats(balls)["striker balls faced"].tolist() == [1, 2, 3]
+
+    def test_a_wide_first_ball_gives_a_batter_zero_balls_faced(self):
+        balls = make_balls([{"striker": "A", "runs_off_bat": 0, "wides": 1}])
+        assert add_running_stats(balls)["striker balls faced"].tolist() == [0]
+
+    def test_totals_start_again_in_each_innings(self):
+        balls = make_balls([
+            {"innings": 1, "striker": "A", "runs_off_bat": 50},
+            {"innings": 1, "striker": "A", "runs_off_bat": 0, "player_dismissed": "A"},
+            {"innings": 3, "striker": "A", "runs_off_bat": 4},
+            {"innings": 3, "striker": "A", "runs_off_bat": 0, "player_dismissed": "A"},
+        ])
+        result = add_running_stats(balls)
+        assert result["striker balls faced"].tolist() == [1, 2, 1, 2]
+        assert result["total striker runs"].tolist() == [50, 50, 4, 4]
+        assert result.loc[1, "player out runs"] == 50 and result.loc[3, "player out runs"] == 4
+        assert result.loc[3, "player out balls faced"] == 2
+
+    def test_a_player_stumped_off_a_wide_keeps_the_balls_faced_so_far(self):
+        balls = make_balls([
+            {"striker": "A", "runs_off_bat": 1},
+            {"striker": "A", "runs_off_bat": 0, "wides": 1, "player_dismissed": "A"},
+        ])
+        result = add_running_stats(balls)
+        assert result.loc[1, "player out balls faced"] == 1
 
     def test_dismissed_striker_gets_their_totals_including_that_ball(self):
         balls = make_balls([
@@ -168,3 +205,44 @@ class TestRegistry:
         balls = make_balls([{"match_id": 1, "striker": "A", "bowler": "C", "runs_off_bat": 1}])
         rows = build_match_rows(balls, [], SOURCE)
         assert pd.isna(rows.loc[0, "striker_id"])
+
+
+class TestBallColumns:
+    def test_the_over_and_position_come_from_the_text_so_the_tenth_ball_is_not_the_first(self):
+        assert split_ball("4.1") == (4, 1)
+        assert split_ball("4.10") == (4, 10)
+        assert split_ball("0.11") == (0, 11)
+        assert split_ball("14.6") == (14, 6)
+
+    def test_an_unreadable_ball_gives_gaps_not_an_error(self):
+        assert split_ball(None) == (None, None)
+        assert split_ball("nan") == (None, None)
+
+    def test_over_position_and_scorecard_ball_are_added_and_ball_stays_a_number(self):
+        balls = make_balls([
+            {"ball": "0.1", "actual_delivery": "0.1", "wides": 1, "runs_off_bat": 0},
+            {"ball": "0.2", "actual_delivery": "0.1", "runs_off_bat": 0},
+            {"ball": "0.9", "actual_delivery": "0.5", "runs_off_bat": 0},
+            {"ball": "0.10", "actual_delivery": "0.5", "runs_off_bat": 0},
+        ])
+        result = add_ball_columns(balls)
+        assert result["over"].tolist() == [0, 0, 0, 0]
+        assert result["ball_in_over"].tolist() == [1, 2, 9, 10]
+        assert result["scorecard_ball"].tolist() == [0.1, 0.1, 0.5, 0.5]
+        assert result["ball"].tolist() == [0.1, 0.2, 0.9, 0.1]        # the number Cricsheet writes, which is why it is not a key
+
+    def test_a_wide_and_a_no_ball_are_not_legal_and_byes_are(self):
+        balls = make_balls([
+            {"ball": "0.1", "actual_delivery": "0.1", "wides": 1, "runs_off_bat": 0},
+            {"ball": "0.2", "actual_delivery": "0.1", "noballs": 1, "runs_off_bat": 0},
+            {"ball": "0.3", "actual_delivery": "0.1", "byes": 2, "runs_off_bat": 0},
+            {"ball": "0.4", "actual_delivery": "0.2", "legbyes": 1, "runs_off_bat": 0},
+            {"ball": "0.5", "actual_delivery": "0.3", "runs_off_bat": 4},
+        ])
+        assert add_ball_columns(balls)["is_legal_delivery"].tolist() == [False, False, True, True, True]
+
+    def test_every_delivery_of_an_innings_gets_a_different_over_and_position(self):
+        text = ["0.1", "0.2", "0.9", "0.10", "0.11", "1.1", "1.2"]
+        balls = make_balls([{"ball": t, "actual_delivery": "0.1", "runs_off_bat": 0} for t in text])
+        result = add_ball_columns(balls)
+        assert not result.duplicated(["over", "ball_in_over"]).any()

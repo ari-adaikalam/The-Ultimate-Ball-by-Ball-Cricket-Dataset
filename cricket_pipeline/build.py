@@ -25,9 +25,10 @@ from cricket_pipeline.config import SOURCES, Source, data_dir, work_dir
 
 CHUNK_ROWS = 250_000
 
-# The old column order is kept where there was one. New columns sit next to the ones they extend.
+# Cricsheet's own over.ball number is left out of the published ball file. The 10th delivery of an over (4.10) reads as the first (4.1),
+# so over and ball_in_over replace it. The pipeline keeps it in the work files, where the Cricinfo pairing uses it.
 FINAL_COLUMNS = [
-    "match_id", "season", "start_date", "innings", "delivery_number", "ball", "batting_team", "bowling_team",
+    "match_id", "season", "start_date", "innings", "delivery_number", "over", "ball_in_over", "scorecard_ball", "is_legal_delivery", "batting_team", "bowling_team",
     "striker", "striker_id", "non_striker", "bowler", "bowler_id",
     "runs_off_bat", "extras", "wides", "noballs", "byes", "legbyes", "penalty",
     "wicket_type", "player_dismissed", "other_wicket_type", "other_player_dismissed", "wicket",
@@ -36,11 +37,11 @@ FINAL_COLUMNS = [
     "country_striker", "batting style_striker", "bowling style_striker", "playing role_striker", "striker_age",
     "country_bowler", "batting style_bowler", "bowling style_bowler", "playing role_bowler", "bowler_age",
 ]
-# The ball number repeats on extras, so the n-th delivery of the innings is the key to join the tracking file
+# The n-th delivery of the innings is the key to join the tracking file
 CRICINFO_FILE_COLUMNS = ["match_id", "innings", "delivery_number", *CRICINFO_COLUMNS]
 WHOLE_NUMBER_COLUMNS = [
     "wagon_x", "wagon_y", "wagon_zone", "predicted_score",
-    "innings", "delivery_number", "extras", "wides", "noballs", "byes", "legbyes", "penalty", "wicket",
+    "innings", "delivery_number", "over", "ball_in_over", "extras", "wides", "noballs", "byes", "legbyes", "penalty", "wicket",
     "striker balls faced", "total striker runs", "player out runs", "player out balls faced",
 ]
 MATCH_WHOLE_NUMBER_COLUMNS = ["match_number", "winner_runs", "winner_wickets"]
@@ -118,7 +119,7 @@ def build(archives: list[str] | None = None) -> dict:
                     rows[column] = None
             rows = tidy_numbers(attach_players(rows, players))
             match_rows.append(rows[["match_id", *MATCH_ON_EVERY_ROW, "venue", "match_number", "toss_winner", "toss_decision",
-                                    "player_of_match", "player_of_match.1", "winner", "winner_runs", "winner_wickets", "outcome"]].iloc[[0]])
+                                    "player_of_match", "player_of_match_2", "winner", "winner_runs", "winner_wickets", "outcome"]].iloc[[0]])
             coverage.append(_coverage_row(source, rows, raw))
             if raw and (raw.get("no_commentary") or raw.get("no_useful_data")):
                 empty.append({"match_id": match_id, "archive": source.archive, "year": int(str(rows["start_date"].iloc[0])[:4]), "rows": len(rows),

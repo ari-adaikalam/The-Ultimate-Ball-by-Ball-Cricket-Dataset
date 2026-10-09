@@ -66,6 +66,12 @@ def capture(args) -> int:
     return scrape_matches.run_queue(limit=args.limit, worker=args.worker, workers=args.workers)
 
 
+def check(args) -> int:
+    from cricket_pipeline import checks
+
+    return checks.run()
+
+
 def build(args) -> int:
     from cricket_pipeline import build as build_module
 
@@ -115,6 +121,9 @@ def main(argv=None) -> int:
     sub = commands.add_parser("build")
     sub.add_argument("--archives", nargs="+", help="only these Cricsheet archives, for a quick test (for example wpl ipl)")
     sub.set_defaults(handler=build)
+
+    sub = commands.add_parser("check", help="check the built files for broken keys, links and totals")
+    sub.set_defaults(handler=check)
 
     sub = commands.add_parser("verify")
     sub.add_argument("--sample", type=int, default=100)

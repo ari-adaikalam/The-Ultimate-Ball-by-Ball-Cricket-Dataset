@@ -32,7 +32,7 @@ PLAYERS_FILE_ONLY = ["full name", "major teams", "image url", "gender", "fieldin
 # ball row. The long text ones are written once per match to matches.csv, keyed by match_id.
 MATCH_ON_EVERY_ROW = ["season", "start_date", "gender", "event", "format", "type"]
 MATCH_FILE_ONLY = [
-    "venue", "match_number", "toss_winner", "toss_decision", "player_of_match", "player_of_match.1",
+    "venue", "match_number", "toss_winner", "toss_decision", "player_of_match", "player_of_match_2",
     "winner", "winner_runs", "winner_wickets", "outcome",
 ]
 

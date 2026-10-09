@@ -7,7 +7,7 @@ Each decision with the reason I made it. The pipeline itself is in [architecture
 | Decision | Reason |
 |---|---|
 | Cricsheet and Cricinfo data sit in separate files, joined on ids | Either source can be used alone, and each file has one source and one licence note |
-| Join on ids and `delivery_number`, never on names or on `ball` | Names collide, and Cricsheet's ball number repeats on extras. The n-th delivery of an innings is a stable key |
+| Join on ids and `delivery_number`, never on names. The published ball file has no `ball` column, only `over` and `ball_in_over` | Names collide. Cricsheet's over.ball number reads the 10th delivery of an over (4.10) as the first (4.1), so it cannot tell two deliveries apart. The n-th delivery of an innings is a stable key |
 | A Cricinfo ball is attached only if innings, position, total runs, striker and bowler all agree | A wrong pairing must leave an empty cell, not a wrong value. Every rejection is listed in a review report |
 | When an innings has missing overs, pair over by over | Cricinfo's own data leaves some overs out, often every second one. Pairing from the start of the innings would shift every ball after the first gap |
 | Only Cricinfo's own labels, with no merging | The JSON keeps GOOD_LENGTH and SHORT_OF_A_GOOD_LENGTH apart (the second is 21% of tracked balls), so merging would throw detail away. Direction names are my names for Cricinfo's eight zone numbers |

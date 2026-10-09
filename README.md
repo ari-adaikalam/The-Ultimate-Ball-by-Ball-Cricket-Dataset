@@ -261,4 +261,4 @@ The code is licensed under the MIT License, see the [LICENSE](LICENSE) file for 
 
 For any queries or contributions, feel free to reach out:
 
-- **Ariharasudhan A**: [Email](mailto:ariadaikalam1234@gmail.com)
+- **Ari Adaikalam**: [Email](mailto:ariadaikalam1234@gmail.com)

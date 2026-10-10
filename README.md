@@ -109,11 +109,11 @@ The files land in `data/output/`, with the Cricinfo columns left empty. The Cric
 - **Checked pairing**: every Cricinfo ball is verified against its Cricsheet row before it is attached.
 - **Wagon wheel columns**: Cricinfo's raw point and zone are kept, with the angle, distance and ring flag derived from them.
 - **Separate predictions**: balls with commentary but no tracking get predicted labels in their own file, each with a calibrated confidence. They never mix into the tracked data.
-- **Coverage report**: for every match, how many balls have each Cricinfo column filled.
+- **Coverage report**: for every match, how many balls have each Cricinfo column filled with a value Cricinfo recorded. Predictions are not counted in it.
 
 ## Text Predictions
 
-`cricinfo_text_predictions.csv` is a separate file of predictions for balls that have commentary text but no Cricinfo tracking value. It gives a predicted line, length, shot and direction, each with a confidence. Every label is one of Cricinfo's own. Nothing in the other files is filled in from it, and Cricinfo's commentary text is not published.
+`cricinfo_text_predictions.csv` is a separate file of predictions for balls that have commentary text but no Cricinfo tracking value. It gives a predicted line, length, shot and direction, each with a confidence. Every label is one of Cricinfo's own. Nothing in the other files is filled in from it, and Cricinfo's commentary text is not published. The file has no confidence cutoff: it lists every prediction the model made, whatever its confidence. The share of balls with a recorded or a predicted value is in Results & Quality.
 
 - **Confidence** is the estimated chance that the label matches what Cricinfo would have recorded. It is measured on matches the model never saw, where predictions at 0.7 matched Cricinfo about 70% of the time. Treat it as a rate across many balls.
 - **Explicit** is 1 when the commentary names that label outright and no other, for example "full toss" or "back of a length" (which Cricinfo calls short of a good length). Those predictions are right more often.
@@ -255,7 +255,7 @@ Six deliveries from an IPL match in 2025, with the tracking file joined on. The 
 
 ## Results & Quality
 
-Share of balls with each Cricinfo column filled, from `coverage_report.csv`.
+Share of balls with each Cricinfo column filled, from `coverage_report.csv`. These are values Cricinfo recorded. The text predictions in `cricinfo_text_predictions.csv` are not counted here, and the figures after these tables give the share with predictions included.
 
 **By era**
 
@@ -284,6 +284,22 @@ Share of balls with each Cricinfo column filled, from `coverage_report.csv`.
 | SA20 | 29,020 | 100% | 100% | 99% | 83% | 96% |
 | MLC | 25,529 | 100% | 100% | 99% | 83% | 96% |
 | WPL | 20,656 | 99% | 99% | 99% | 85% | 72% |
+
+**Recorded values and availability with predictions**
+
+For line, length, shot and direction there are two figures. Both use the same denominator, all 5,852,078 deliveries in the ball file, and each delivery counts once. A delivery is identified by `match_id`, `innings` and `delivery_number`, and no key repeats in `ball_by_ball_data.csv`, `cricinfo_tracking.csv` or `cricinfo_text_predictions.csv`.
+
+- **Recorded** is the share of deliveries that have a value for the field in `cricinfo_tracking.csv`.
+- **Recorded or predicted** is the share that have a recorded value or a value in `cricinfo_text_predictions.csv`. A prediction is only made where no value is recorded, so no delivery is in both and the recorded and predicted-only shares add up to this figure.
+
+| Field | Recorded | Predicted, no value recorded | Recorded or predicted |
+|---|---|---|---|
+| Line | 47.5% (2,780,332) | 27.9% (1,634,290) | 75.4% (4,414,622) |
+| Length | 47.5% (2,780,911) | 27.9% (1,633,741) | 75.4% (4,414,652) |
+| Shot | 74.9% (4,383,558) | 5.2% (306,455) | 80.1% (4,690,013) |
+| Direction | 59.1% (3,458,016) | 4.8% (280,142) | 63.9% (3,738,158) |
+
+These figures are for the snapshot described under Dataset Source. No confidence cutoff is applied: every prediction in the file is counted, whatever its confidence, and the confidences are in the file for anyone who wants to set their own. `coverage_report.csv` and the tables above count recorded values only, and predictions are never in them. The combined figure says how many deliveries have a label of either kind. It is not a measure of accuracy. How often a predicted label matches what Cricinfo records is what each prediction's confidence column estimates.
 
 Not every match has every Cricinfo field. Cricinfo did not record tracking for all matches, and coverage varies by competition and year.
 

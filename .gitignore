@@ -14,6 +14,7 @@ kaggle.json
 data/
 *.csv
 *.parquet
+!api/tests/golden/api/*.parquet
 
 # Local environment
 .venv/

@@ -14,6 +14,8 @@ from cricket_pipeline.config import data_dir
 
 KEY = ["match_id", "innings", "delivery_number"]
 COVERAGE_COLUMNS = ["ball_line", "ball_length", "shot_played", "wagon_x", "win_probability"]
+# line, length, shot and direction as (name in the README, column in cricinfo_tracking.csv, column in cricinfo_text_predictions.csv)
+AVAILABILITY_FIELDS = [("Line", "ball_line", "line"), ("Length", "ball_length", "length"), ("Shot", "shot_played", "shot"), ("Direction", "shot_direction", "direction")]
 ERAS = [(0, 2013, "2001 to 2013"), (2014, 2019, "2014 to 2019"), (2020, 3000, "2020 and later")]
 COMPETITIONS = {
     "tests": "Tests", "odis": "ODIs", "t20s": "T20Is", "ipl": "IPL", "wpl": "WPL", "bbl": "BBL", "wbb": "WBBL", "cpl": "CPL",
@@ -42,6 +44,29 @@ def coverage_tables(out) -> tuple[list, list]:
     comps = table(c.groupby("archive")).sort_values("rows", ascending=False)
     fmt = lambda name, r: (name, int(r.rows), *[int(r[k]) for k in COVERAGE_COLUMNS])
     return [fmt(n, r) for n, r in eras.iterrows()], [fmt(COMPETITIONS[a], r) for a, r in comps.iterrows()]
+
+
+def availability(out) -> dict:
+    """For line, length, shot and direction: deliveries with a value Cricinfo recorded, deliveries with only a predicted value, and deliveries with either.
+
+    Every count is over the deliveries of the ball file, each counted once by match_id, innings and delivery_number, and the denominator is all of them. A key that repeats in any of
+    the three files stops the count, because a repeat would count a delivery twice. No confidence cutoff is applied. A delivery that has both a recorded and a predicted value
+    for a field would make the shares add up wrongly, so that stops the count too.
+    """
+    balls = pd.read_csv(out / "ball_by_ball_data.csv", usecols=KEY)
+    tracking = pd.read_csv(out / "cricinfo_tracking.csv", usecols=KEY + [t for _, t, _ in AVAILABILITY_FIELDS], low_memory=False)
+    predictions = pd.read_csv(out / "cricinfo_text_predictions.csv", usecols=KEY + [p for _, _, p in AVAILABILITY_FIELDS], low_memory=False)
+    for name, frame in (("ball_by_ball_data.csv", balls), ("cricinfo_tracking.csv", tracking), ("cricinfo_text_predictions.csv", predictions)):
+        if frame.duplicated(KEY).any():
+            raise ValueError(f"{name} repeats a delivery key, so the deliveries cannot be counted once each")
+    both = balls.merge(tracking, on=KEY, how="left").merge(predictions, on=KEY, how="left")
+    rows = []
+    for label, recorded_column, predicted_column in AVAILABILITY_FIELDS:
+        recorded, predicted = both[recorded_column].notna(), both[predicted_column].notna()
+        if (recorded & predicted).any():
+            raise ValueError(f"{label}: some deliveries have a recorded and a predicted value")
+        rows.append((label, int(recorded.sum()), int((predicted & ~recorded).sum()), int((recorded | predicted).sum())))
+    return {"deliveries": len(balls), "fields": rows}
 
 
 def tracking_figures(out) -> dict:
@@ -114,7 +139,7 @@ def figures(out=None) -> dict:
     empty = pd.read_csv(out / "empty_matches.csv", usecols=["match_id"])
     era_rows, competition_rows = coverage_tables(out)
     return {"file_rows": file_rows(out), "empty_matches": len(empty), "eras": era_rows, "competitions": competition_rows,
-            "snapshot": snapshot_date(), "spelling_matches": spelling_matches(out), **tracking_figures(out)}
+            "snapshot": snapshot_date(), "spelling_matches": spelling_matches(out), "availability": availability(out), **tracking_figures(out)}
 
 
 def n(value: int) -> str:
@@ -132,6 +157,14 @@ def table_block(header: str, rows: list) -> str:
     return "\n".join(lines)
 
 
+def availability_block(a: dict) -> str:
+    total = a["deliveries"]
+    share = lambda count: f"{100 * count / total:.1f}% ({n(count)})"
+    lines = ["| Field | Recorded | Predicted, no value recorded | Recorded or predicted |", "|---|---|---|---|"]
+    lines += [f"| {label} | {share(recorded)} | {share(predicted_only)} | {share(either)} |" for label, recorded, predicted_only, either in a["fields"]]
+    return "\n".join(lines)
+
+
 def fill_readme(text: str, f: dict) -> str:
     """Put the computed figures into the README, in the tables and in the sentences that quote them."""
     rows = f["file_rows"]
@@ -139,6 +172,9 @@ def fill_readme(text: str, f: dict) -> str:
         text = re.sub(rf"(\| `{re.escape(name)}` \| [^|]+\| )[\d,]+( \|)", lambda m: f"{m.group(1)}{n(count)}{m.group(2)}", text)
     text = re.sub(r"\| Era \|.*\n\|---.*\n(?:\|.*\n?)+", lambda m: table_block("Era", f["eras"]) + ("\n" if m.group(0).endswith("\n") else ""), text, count=1)
     text = re.sub(r"\| Competition \|.*\n\|---.*\n(?:\|.*\n?)+", lambda m: table_block("Competition", f["competitions"]) + ("\n" if m.group(0).endswith("\n") else ""), text, count=1)
+    if f.get("availability"):
+        text = re.sub(r"\| Field \| Recorded \|.*\n\|---.*\n(?:\|.*\n?)+", lambda m: availability_block(f["availability"]) + ("\n" if m.group(0).endswith("\n") else ""), text, count=1)
+        text = re.sub(r"all [\d,]+ deliveries in the ball file", f"all {n(f['availability']['deliveries'])} deliveries in the ball file", text)
     rounded = n(round(f["empty_matches"], -2))
     text = re.sub(r"About [\d,]+ matches, mostly", f"About {rounded} matches, mostly", text)
     text = re.sub(r"The [\d,]+ matches with no Cricinfo commentary", f"The {rounded} matches with no Cricinfo commentary", text)

@@ -1,6 +1,8 @@
 import io
 import zipfile
 
+import pytest
+
 from cricket_pipeline import cricsheet, pipeline
 from cricket_pipeline.config import Source
 
@@ -34,17 +36,21 @@ def test_read_match_returns_rows_and_info_lines():
     assert info_lines == ["info,gender,male\n"]
 
 
-def test_find_new_matches_skips_known_ids_and_gives_a_match_to_one_archive_only(monkeypatch):
+def test_find_new_matches_skips_known_ids(monkeypatch):
     tests_source = Source("tests", "TEST", "Intl")
     odis_source = Source("odis", "ODI", "Intl")
-    monkeypatch.setattr(
-        pipeline,
-        "ids_by_source",
-        lambda: {tests_source: {1, 2, 3}, odis_source: {3, 4}},
-    )
+    monkeypatch.setattr(pipeline, "ids_by_source", lambda: {tests_source: {1, 2, 3}, odis_source: {4}})
     new = pipeline.find_new_matches(known={1})
     assert new[tests_source] == [2, 3]
     assert new[odis_source] == [4]
+
+
+def test_a_match_in_two_collections_stops_the_run_and_is_not_settled_by_order(monkeypatch):
+    tests_source = Source("tests", "TEST", "Intl")
+    odis_source = Source("odis", "ODI", "Intl")
+    monkeypatch.setattr(pipeline, "ids_by_source", lambda: {tests_source: {1, 2, 3}, odis_source: {3, 4}})
+    with pytest.raises(ValueError, match="more than one Cricsheet collection"):
+        pipeline.find_new_matches(known={1})
 
 
 def test_done_ids_keeps_final_answers_and_retries_blocks(tmp_path):

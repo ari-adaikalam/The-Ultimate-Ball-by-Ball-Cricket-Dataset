@@ -47,3 +47,13 @@ The evidence behind these is summarised in [predictions_file.md](predictions_fil
 |---|---|
 | The dataset is licensed ODC-BY-1.0, matching Cricsheet, and the Cricinfo files are marked as not covered | The licence cannot grant rights over data it does not own. Cricinfo is credited wherever it is used |
 | Files are written one match at a time and linked, not copied, for upload | Memory stays small, and the main file is about 2.4 GB |
+
+## Cricsheet's JSON files
+
+| Decision | Reason |
+|---|---|
+| The JSON downloads are read next to the CSV ones, and a match is used only if the two describe the same deliveries | The JSON holds wickets beyond the second, fielders, squads, officials, reviews, powerplays, targets and replacements the CSV does not. A check on every match stops the build if the two disagree on the deliveries, the runs or the wickets |
+| New data goes in its own files, one row per fact, keyed by match, innings and delivery | Fielders, officials and powerplays are lists of unknown length. A file per grain avoids mostly empty columns and repeated text, and gets a primary key of its own |
+| New ball file columns go at the end, and the first listed fielder is the only fielder on the ball row | Existing columns keep their place and their descriptions. `wicket_fielders.csv` has every fielder |
+| Missing data is a row, not a zero | `match_missing.csv` records what Cricsheet says it does not have, so a match with no reviews and a match whose reviews are unknown are not the same |
+| A name is written the way the ball file spells it, found through the id | Cricsheet's CSV adds a suffix such as (2) when two people share a name and its JSON does not |

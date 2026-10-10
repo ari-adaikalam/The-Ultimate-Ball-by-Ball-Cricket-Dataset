@@ -16,7 +16,23 @@ KEY = ["match_id", "innings", "delivery_number"]
 BALL_COLUMNS = [
     "match_id", "innings", "delivery_number", "scorecard_ball", "over", "ball_in_over", "wides", "noballs", "is_legal_delivery", "striker", "striker_id", "bowler_id",
     "striker balls faced", "runs_off_bat", "total striker runs", "player_dismissed", "player out runs", "player out balls faced",
+    "wicket", "wicket_type", "other_player_dismissed", "other_wicket_type", "fielder_1", "fielder_1_id", "fielder_1_substitute", "non_boundary",
 ]
+
+# The files Cricsheet's JSON adds, their keys, and the people roles and collections that are allowed
+JSON_FILE_KEYS = {
+    "wickets.csv": KEY + ["wicket_number"], "wicket_fielders.csv": KEY + ["wicket_number", "fielder_number"], "match_people.csv": ["match_id", "role", "person_number"],
+    "innings.csv": ["match_id", "innings"], "powerplays.csv": ["match_id", "innings", "powerplay_number"], "reviews.csv": KEY,
+    "match_replacements.csv": KEY + ["replacement_number"],
+    "match_missing.csv": ["match_id", "missing_number"], "miscounted_overs.csv": ["match_id", "innings", "over"],
+    "innings_absent_hurt.csv": ["match_id", "innings", "player"], "match_dates.csv": ["match_id", "date_number"],
+    "player_external_ids.csv": ["player_id", "source", "external_id"],
+}
+MISSING_TYPES = {"powerplays", "reviews", "player_of_match", "umpires"}
+EXTERNAL_SOURCES = {"bcci", "bigbash", "cricbuzz", "cricheroes", "crichq", "cricingif", "cricketarchive", "cricketworld", "nvplay", "opta", "pulse"}
+ROLES = {"player", "umpire", "tv_umpire", "match_referee", "reserve_umpire"}
+COLLECTIONS = {"tests", "odis", "t20s", "ipl", "wpl", "bbl", "wbb", "cpl", "psl", "sat", "ilt", "hnd", "mlc", "lpl", "bpl"}
+FIELDING_KINDS = {"caught", "stumped", "run out"}
 
 
 @dataclass
@@ -142,6 +158,110 @@ def coverage_rows(ball: pd.DataFrame, coverage: pd.DataFrame) -> str | None:
     return None
 
 
+def _plain(series: pd.Series) -> pd.Series:
+    return series.astype("string").str.replace(r"\s*\(\d+\)$", "", regex=True)
+
+
+def wickets_agree_with_balls(ball: pd.DataFrame, wickets: pd.DataFrame) -> str | None:
+    """wickets.csv holds every wicket. Its first and second wicket of a delivery are the ball file's first and second dismissal."""
+    problems = []
+    for number, who, kind in ((1, "player_dismissed", "wicket_type"), (2, "other_player_dismissed", "other_wicket_type")):
+        on_ball = ball[ball[who].notna()][KEY + [who, kind]]
+        in_file = wickets[wickets.wicket_number == number][KEY + ["player_dismissed", "wicket_type"]].rename(columns={"player_dismissed": "file_player", "wicket_type": "file_kind"})
+        if len(on_ball) != len(in_file):
+            problems.append(f"{len(on_ball):,} balls have a wicket {number} and wickets.csv has {len(in_file):,}")
+            continue
+        joined = on_ball.merge(in_file, on=KEY, how="left")
+        wrong = int(((_plain(joined[who]) != _plain(joined["file_player"])) | (joined[kind] != joined["file_kind"])).sum())
+        if wrong:
+            problems.append(f"{wrong:,} wicket {number} rows differ from the ball file")
+    return "; ".join(problems) if problems else None
+
+
+def fielders_belong_to_wickets(wickets: pd.DataFrame, fielders: pd.DataFrame) -> str | None:
+    wicket_key = KEY + ["wicket_number"]
+    missing = missing_references(fielders, wickets, wicket_key, "fielder rows")
+    if missing:
+        return missing
+    kinds = fielders.merge(wickets[wicket_key + ["wicket_type"]], on=wicket_key, how="left").wicket_type
+    odd = int((~kinds.isin(FIELDING_KINDS)).sum())
+    return f"{odd:,} fielders sit on a wicket that is not caught, stumped or run out" if odd else None
+
+
+def ball_fielder_is_the_first_listed(ball: pd.DataFrame, fielders: pd.DataFrame) -> str | None:
+    """fielder_1 on a ball is the first fielder of wicket 1 in wicket_fielders.csv, and empty when there is none."""
+    first = fielders[(fielders.wicket_number == 1) & (fielders.fielder_number == 1)][KEY + ["fielder", "fielder_id", "substitute"]]
+    joined = ball[KEY + ["fielder_1", "fielder_1_id", "fielder_1_substitute"]].merge(first, on=KEY, how="left")
+    wrong = int((joined.fielder_1.astype("string").fillna("") != joined.fielder.astype("string").fillna("")).sum()
+                + (joined.fielder_1_id.astype("string").fillna("") != joined.fielder_id.astype("string").fillna("")).sum())
+    shown = int(ball.fielder_1_substitute.notna().sum())
+    if shown != len(first):
+        wrong += abs(shown - len(first))
+    return f"fielder_1 on the ball file differs from wicket_fielders.csv on {wrong:,} cells" if wrong else None
+
+
+def people_rules(people: pd.DataFrame) -> str | None:
+    problems = []
+    unknown = sorted(set(people.role) - ROLES)
+    if unknown:
+        problems.append(f"unknown roles {unknown}")
+    players = people.role == "player"
+    if people[players].team.isna().any():
+        problems.append("a player has no team")
+    if people[~players].team.notna().any():
+        problems.append("an official has a team")
+    return "; ".join(problems) if problems else None
+
+
+def match_columns(matches: pd.DataFrame) -> str | None:
+    problems = []
+    if matches.collection.isna().any() or not set(matches.collection) <= COLLECTIONS:
+        problems.append(f"collection is empty or unknown for {int((~matches.collection.isin(COLLECTIONS)).sum()):,} matches")
+    if not set(matches.balls_per_over.dropna().astype(int)) <= {5, 6}:
+        problems.append("balls_per_over is not 5 or 6")
+    if (pd.to_datetime(matches.end_date) < pd.to_datetime(matches.start_date)).any():
+        problems.append("a match ends before it starts")
+    return "; ".join(problems) if problems else None
+
+
+def non_boundary_only_on_fours_and_sixes(ball: pd.DataFrame) -> str | None:
+    flagged = ball[ball.non_boundary.astype("string") == "True"]
+    wrong = int((~flagged.runs_off_bat.isin([4, 6])).sum())
+    unset = int(ball.non_boundary.isna().sum())
+    problems = ([f"{wrong:,} balls marked non_boundary are not a four or a six"] if wrong else []) + ([f"non_boundary is empty on {unset:,} balls"] if unset else [])
+    return "; ".join(problems) if problems else None
+
+
+def missing_rules(missing: pd.DataFrame) -> str | None:
+    unknown = sorted(set(missing.missing_type) - MISSING_TYPES)
+    if unknown:
+        return f"unknown kinds of missing data {unknown}"
+    odd = int((missing[missing.missing_type == "powerplays"].innings.isna()).sum() + (missing[missing.missing_type != "powerplays"].innings.notna()).sum())
+    return f"{odd:,} rows have an innings that does not fit their kind" if odd else None
+
+
+def miscounted_agree_with_balls(ball: pd.DataFrame, miscounted: pd.DataFrame) -> str | None:
+    """The balls Cricsheet says an over held are the legal deliveries the ball file has in that over."""
+    legal = ball[ball.is_legal_delivery.astype("string") == "True"].groupby(["match_id", "innings", "over"]).size().rename("legal").reset_index()
+    joined = miscounted.merge(legal, on=["match_id", "innings", "over"], how="left")
+    wrong = int((joined.balls != joined.legal.fillna(0)).sum())
+    return f"{wrong:,} of {len(miscounted):,} miscounted overs do not match the ball file's legal balls" if wrong else None
+
+
+def dates_agree_with_matches(dates: pd.DataFrame, matches: pd.DataFrame) -> str | None:
+    ordered = dates.sort_values(["match_id", "date_number"])
+    first, last = ordered.groupby("match_id").date.first(), ordered.groupby("match_id").date.last()
+    table = matches.set_index("match_id")
+    missing = set(table.index) - set(first.index)
+    wrong = int((first.reindex(table.index).astype("string") != table.start_date.astype("string")).sum() + (last.reindex(table.index).astype("string") != table.end_date.astype("string")).sum())
+    return f"{len(missing):,} matches have no dates and {wrong:,} first or last dates differ from matches.csv" if missing or wrong else None
+
+
+def external_id_rules(external: pd.DataFrame) -> str | None:
+    unknown = sorted(set(external.source) - EXTERNAL_SOURCES)
+    return f"unknown sources {unknown}, and Cricinfo ids belong in players.csv only" if unknown else None
+
+
 PAIRS = [("line", "ball_line"), ("length", "ball_length"), ("shot", "shot_played"), ("direction", "shot_direction")]
 
 
@@ -187,6 +307,41 @@ def run_checks(out: Path) -> Report:
     if files["coverage_report.csv"].exists():
         coverage = pd.read_csv(files["coverage_report.csv"], usecols=["match_id", "rows"])
         report.record("coverage_report.csv rows equal the ball file's rows per match", coverage_rows(ball, coverage))
+    json_files = {name: pd.read_csv(out / name, low_memory=False) for name in JSON_FILE_KEYS if (out / name).exists()}
+    for name, frame in json_files.items():
+        report.record(f"{name}: key is unique", duplicate_keys(frame, JSON_FILE_KEYS[name], name))
+    if "wickets.csv" in json_files:
+        report.record("every wicket is on a delivery of the ball file", missing_references(json_files["wickets.csv"], ball, KEY, "wickets"))
+        report.record("wickets.csv agrees with the ball file's first and second dismissal", wickets_agree_with_balls(ball, json_files["wickets.csv"]))
+        if "wicket_fielders.csv" in json_files:
+            report.record("every fielder belongs to a wicket that is caught, stumped or run out", fielders_belong_to_wickets(json_files["wickets.csv"], json_files["wicket_fielders.csv"]))
+            if {"fielder_1", "fielder_1_id", "fielder_1_substitute"} <= set(ball.columns):
+                report.record("fielder_1 on the ball file is the first fielder of wicket 1", ball_fielder_is_the_first_listed(ball, json_files["wicket_fielders.csv"]))
+    for name in ("reviews.csv", "match_replacements.csv"):
+        if name in json_files:
+            report.record(f"every row of {name} is a delivery in the ball file", missing_references(json_files[name], ball, KEY, f"{name} rows"))
+    if "innings.csv" in json_files:
+        in_ball = ball[["match_id", "innings"]].drop_duplicates()
+        report.record("innings.csv has exactly the innings of the ball file", None if len(in_ball) == len(json_files["innings.csv"]) and not missing_references(in_ball, json_files["innings.csv"], ["match_id", "innings"], "innings") else "the innings in innings.csv and in the ball file differ")
+        if "powerplays.csv" in json_files:
+            report.record("every powerplay is in an innings of innings.csv", missing_references(json_files["powerplays.csv"], json_files["innings.csv"], ["match_id", "innings"], "powerplay rows"))
+    if "non_boundary" in ball.columns:
+        report.record("non_boundary is set only on fours and sixes and never empty", non_boundary_only_on_fours_and_sixes(ball))
+    if "match_missing.csv" in json_files:
+        report.record("match_missing.csv: kinds are known and an innings is given for powerplays only", missing_rules(json_files["match_missing.csv"]))
+    for name in ("miscounted_overs.csv", "innings_absent_hurt.csv"):
+        if name in json_files and "innings.csv" in json_files:
+            report.record(f"every row of {name} is an innings of innings.csv", missing_references(json_files[name], json_files["innings.csv"], ["match_id", "innings"], f"{name} rows"))
+    if "miscounted_overs.csv" in json_files and {"is_legal_delivery", "over"} <= set(ball.columns):
+        report.record("miscounted_overs.csv agrees with the legal balls of the ball file", miscounted_agree_with_balls(ball, json_files["miscounted_overs.csv"]))
+    if "player_external_ids.csv" in json_files:
+        report.record("player_external_ids.csv: known sources only, no Cricinfo ids", external_id_rules(json_files["player_external_ids.csv"]))
+    if "match_people.csv" in json_files:
+        report.record("match_people.csv: roles are known, players have a team and officials have none", people_rules(json_files["match_people.csv"]))
+    if files["matches.csv"].exists() and "match_dates.csv" in json_files and "end_date" in pd.read_csv(files["matches.csv"], nrows=0).columns:
+        report.record("match_dates.csv starts and ends where matches.csv says", dates_agree_with_matches(json_files["match_dates.csv"], pd.read_csv(files["matches.csv"], usecols=["match_id", "start_date", "end_date"])))
+    if files["matches.csv"].exists() and "collection" in pd.read_csv(files["matches.csv"], nrows=0).columns:
+        report.record("matches.csv: collection, balls_per_over and end_date make sense", match_columns(pd.read_csv(files["matches.csv"], usecols=["collection", "balls_per_over", "start_date", "end_date"])))
     tracking = None
     if files["cricinfo_tracking.csv"].exists():
         tracking = pd.read_csv(files["cricinfo_tracking.csv"], usecols=KEY + [t for _, t in PAIRS], low_memory=False)

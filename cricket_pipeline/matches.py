@@ -37,10 +37,12 @@ CRICSHEET_COLUMNS = [
     "gender", "event", "match_number", "toss_winner", "toss_decision",
     "player_of_match", "player_of_match_2", "winner", "winner_runs",
     "winner_wickets", "outcome", "format", "type",
+    "fielder_1", "fielder_1_id", "fielder_1_substitute", "non_boundary",
 ]
 
 # The columns of the published ball and match rows that come from Cricsheet, which `verify` rebuilds and compares
 PUBLISHED_COLUMNS = [column for column in CRICSHEET_COLUMNS if column not in ID_COLUMNS]
+FIELDER_COLUMNS = ["fielder_1", "fielder_1_id", "fielder_1_substitute"]
 
 
 def _clean(text: str) -> str:
@@ -164,12 +166,29 @@ def add_ball_columns(rows: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
-def build_match_rows(balls: pd.DataFrame, info_lines: list[str], source: Source) -> pd.DataFrame:
+def add_fielder_columns(rows: pd.DataFrame, first_fielders: dict | None = None) -> pd.DataFrame:
+    """Add the first listed fielder of the first wicket. first_fielders maps (innings, delivery number) to the three values.
+
+    The delivery number is the n-th row of the innings. Rows with no fielder, and every row when none are given, stay empty.
+    """
+    result = rows.copy()
+    numbers = result.groupby("innings").cumcount() + 1
+    found = first_fielders or {}
+    keys = list(zip(result["innings"], numbers))
+    for column in FIELDER_COLUMNS:
+        result[column] = pd.Series([found.get(k, {}).get(column) for k in keys], index=result.index, dtype="object")
+    result["fielder_1_substitute"] = result["fielder_1_substitute"].astype("boolean")
+    return result
+
+
+def build_match_rows(balls: pd.DataFrame, info_lines: list[str], source: Source, first_fielders: dict | None = None) -> pd.DataFrame:
     missing = [column for column in RAW_COLUMNS if column not in balls.columns]
     if missing:
         raise ValueError(f"Cricsheet match file is missing columns: {missing}")
 
     rows = add_ball_columns(add_running_stats(balls[RAW_COLUMNS]))
+    # Cricsheet marks a four or six that was run and not hit to the boundary. A blank means it was not marked, so False and never empty.
+    rows["non_boundary"] = balls["non_boundary"].notna().to_numpy() if "non_boundary" in balls.columns else False
     registry = parse_registry(info_lines)
     rows["striker_id"] = rows["striker"].map(registry)
     rows["bowler_id"] = rows["bowler"].map(registry)
@@ -177,4 +196,4 @@ def build_match_rows(balls: pd.DataFrame, info_lines: list[str], source: Source)
         rows[field] = value
     rows["format"] = source.format
     rows["type"] = source.type
-    return rows[CRICSHEET_COLUMNS]
+    return add_fielder_columns(rows, first_fielders)[CRICSHEET_COLUMNS]

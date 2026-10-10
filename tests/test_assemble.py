@@ -163,3 +163,12 @@ def test_ball_rows_lose_only_the_long_match_columns():
         assert column not in result.columns
     for column in ("match_id", "ball", "runs_off_bat", *MATCH_ON_EVERY_ROW):
         assert column in result.columns
+
+
+def test_external_ids_come_from_the_register_without_cricinfo_for_the_people_in_the_dataset():
+    from cricket_pipeline.assemble import external_ids_file
+
+    register = pd.DataFrame({"identifier": ["a", "b", "c"], "key_cricbuzz": ["11", None, "33"], "key_opta": ["7.0", None, None], "key_opta_2": ["8", None, None],
+                            "key_cricinfo": ["99", "98", "97"]})
+    found = external_ids_file(register, {"a", "b"})
+    assert found.values.tolist() == [["a", "cricbuzz", "11"], ["a", "opta", "7"], ["a", "opta", "8"]]

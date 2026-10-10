@@ -55,11 +55,11 @@ def test_build_writes_the_three_files_with_the_planned_columns(data_folder):
     out = data_folder / "output"
     main = pd.read_csv(out / "ball_by_ball_data.csv")
     assert totals["rows"] == 6 and totals["matches"] == 2 and totals["captured"] == 1
-    assert main.columns.tolist() == build.FINAL_COLUMNS and len(build.FINAL_COLUMNS) == 46
+    assert main.columns.tolist() == build.FINAL_COLUMNS and len(build.FINAL_COLUMNS) == 50
     assert "venue" not in main.columns and "winner" not in main.columns
     assert not set(build.CRICINFO_COLUMNS) & set(main.columns)          # the tracking lives only in its own file
     matches = pd.read_csv(out / "matches.csv")
-    assert matches.match_id.tolist() == [1, 2] and matches.venue.tolist() == ["Ground A", "Ground B"] and matches.shape[1] == 17
+    assert matches.match_id.tolist() == [1, 2] and matches.venue.tolist() == ["Ground A", "Ground B"] and matches.shape[1] == 38
     assert len(pd.read_csv(out / "players.csv")) == 2
 
 
@@ -125,3 +125,40 @@ def test_empty_matches_are_listed_in_their_own_file_and_stay_in_the_dataset(data
     assert empty.reason.str.contains("no commentary|nothing useful").all()
     assert totals["matches"] == 3 and totals["rows"] == 9      # skipped on Cricinfo, still in the dataset
     assert pd.read_csv(data_folder / "output" / "review.csv").empty
+
+
+def write_json_work_files(data_folder):
+    from cricket_pipeline import cricsheet_json as cj
+
+    work = data_folder / "work"
+    tables = {
+        "facts": [{"match_id": 1, "team_1": "A", "team_2": "B", "city": "Leeds", "end_date": "2024-05-03", "scheduled_overs": 20.0, "balls_per_over": 6.0,
+                   "match_type_number": 7.0, "collection": "ipl", "umpire_1": "U1"}, {"match_id": 2, "team_1": "A", "team_2": "B", "collection": "ipl"}],
+        "wickets": [{"match_id": 1, "innings": 1.0, "delivery_number": 2.0, "wicket_number": 1.0, "player_dismissed": "X", "player_dismissed_id": "x", "wicket_type": "caught"}],
+        "wicket_fielders": [{"match_id": 1, "innings": 1.0, "delivery_number": 2.0, "wicket_number": 1.0, "fielder_number": 1.0, "fielder": "F", "fielder_id": "f", "substitute": False}],
+        "people": [{"match_id": 1, "role": "player", "person_number": 1.0, "team": "A", "person": "P", "person_id": "p"}],
+        "innings": [{"match_id": 1, "innings": 1.0, "batting_team": "A", "target_runs": None, "is_super_over": False, "declared": False, "penalty_runs_pre": 0.0, "penalty_runs_post": 5.0}],
+        "powerplays": [{"match_id": 1, "innings": 1.0, "powerplay_number": 1.0, "type": "mandatory", "start_scorecard_ball": 0.1, "end_scorecard_ball": 5.6}],
+        "reviews": [], "replacements": [],
+        "notes": [{"match_id": 2, "collection": "ipl", "note": "1 deliveries spell the striker differently in the JSON and the CSV"}],
+    }
+    columns = {**cj.TABLE_COLUMNS, "notes": cj.NOTE_COLUMNS}
+    for name, rows in tables.items():
+        pd.DataFrame(rows, columns=columns[name]).to_csv(work / f"cricsheet_ipl_{name}.csv", index=False)
+
+
+def test_the_tables_from_the_json_become_files_and_match_columns(data_folder):
+    write_inputs(data_folder, [(1, 3), (2, 3, "Ground B")])
+    write_json_work_files(data_folder)
+    totals = build.build(archives=["ipl"])
+    out = data_folder / "output"
+    matches = pd.read_csv(out / "matches.csv")
+    assert matches.loc[0, "city"] == "Leeds" and matches.loc[0, "scheduled_overs"] == 20 and matches.loc[0, "umpire_1"] == "U1" and pd.isna(matches.loc[1, "city"])
+    assert totals["json_files"] == {"wickets.csv": 1, "wicket_fielders.csv": 1, "match_people.csv": 1, "innings.csv": 1, "powerplays.csv": 1, "reviews.csv": 0,
+                                    "match_replacements.csv": 0, "match_missing.csv": 0, "miscounted_overs.csv": 0, "innings_absent_hurt.csv": 0, "match_dates.csv": 0,
+                                    "player_external_ids.csv": 0}
+    wickets = pd.read_csv(out / "wickets.csv")
+    assert wickets.columns.tolist() == build.TABLE_COLUMNS["wickets"] and wickets.loc[0, "delivery_number"] == 2
+    assert (out / "wickets.csv").read_text().splitlines()[1] == "1,1,2,1,X,x,caught"                   # whole numbers, not 1.0
+    assert pd.read_csv(out / "innings.csv").loc[0, "penalty_runs_post"] == 5
+    assert totals["json_notes"] == 1 and "spell the striker" in (out / "json_review.csv").read_text()

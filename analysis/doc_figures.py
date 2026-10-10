@@ -80,7 +80,7 @@ def tracking_figures(out) -> dict:
 
 def snapshot_date() -> str | None:
     """The day of the newest Cricsheet download the files were built from, written as 9 October 2026."""
-    zips = list((data_dir() / "cricsheet").glob("*_csv2.zip"))
+    zips = [*(data_dir() / "cricsheet").glob("*_csv2.zip"), *(data_dir() / "cricsheet").glob("*_json.zip")]
     if not zips:
         return None
     day = datetime.fromtimestamp(max(z.stat().st_mtime for z in zips), timezone.utc)

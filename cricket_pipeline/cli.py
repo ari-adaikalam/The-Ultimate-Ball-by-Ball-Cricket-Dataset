@@ -26,10 +26,12 @@ def ingest(args) -> int:
         ids = ids[: args.limit] if args.limit else ids
         if not ids:
             continue
-        rows, failures = pipeline.build_rows(source, ids)
+        rows, failures, tables = pipeline.build_rows(source, ids)
         # One file per archive keeps memory small and a bad archive from losing the rest
         output = work_dir() / f"cricsheet_{source.archive}.csv"
         rows.to_csv(output, index=False)
+        for name, table in tables.items():
+            table.to_csv(work_dir() / f"cricsheet_{source.archive}_{name}.csv", index=False)
         total_rows += len(rows)
         print(f"  {source.archive:<6} {len(ids) - len(failures):>5} matches, {len(rows):>8} rows, {len(failures)} failed")
         all_failures.update(failures)

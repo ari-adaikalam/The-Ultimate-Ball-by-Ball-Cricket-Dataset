@@ -6,6 +6,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 CRICSHEET_URL = "https://cricsheet.org/downloads/{archive}_csv2.zip"
+CRICSHEET_JSON_URL = "https://cricsheet.org/downloads/{archive}_json.zip"
 
 
 @dataclass(frozen=True)

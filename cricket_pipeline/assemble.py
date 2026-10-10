@@ -159,3 +159,21 @@ def matches_file(rows: pd.DataFrame) -> pd.DataFrame:
 def without_match_file_columns(rows: pd.DataFrame) -> pd.DataFrame:
     """The ball rows as published: the long match-level columns live in matches.csv instead."""
     return rows.drop(columns=MATCH_FILE_ONLY)
+
+
+def external_ids_file(register: pd.DataFrame, wanted: set[str]) -> pd.DataFrame:
+    """One row per id a person has in another system, for the people in the dataset, from Cricsheet's register.
+
+    The register has one column per system (key_cricbuzz, key_opta, and a second column such as key_pulse_2 when a person has two ids there).
+    Cricinfo ids are left out on purpose: they live in players.csv only, so a release without Cricinfo removes them in one place.
+    """
+    people = register[register["identifier"].isin(wanted)]
+    rows = []
+    for column in register.columns:
+        if not column.startswith("key_") or "cricinfo" in column:
+            continue
+        found = people[["identifier", column]].dropna()
+        source = re.sub(r"_\d+$", "", column[len("key_"):])
+        rows.append(pd.DataFrame({"player_id": found["identifier"], "source": source, "external_id": found[column].astype(str).str.replace(r"\.0$", "", regex=True)}))
+    table = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame(columns=["player_id", "source", "external_id"])
+    return table.drop_duplicates().sort_values(["player_id", "source", "external_id"]).reset_index(drop=True)

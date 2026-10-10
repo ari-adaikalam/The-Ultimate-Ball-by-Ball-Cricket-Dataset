@@ -7,8 +7,8 @@ import pandas as pd
 
 from cricket_pipeline import cricsheet, dataset
 from cricket_pipeline.config import SOURCES, dataset_csv
-from cricket_pipeline.matches import PUBLISHED_COLUMNS, build_match_rows
-from cricket_pipeline.pipeline import ids_by_source
+from cricket_pipeline.matches import PUBLISHED_COLUMNS
+from cricket_pipeline.pipeline import build_match, ids_by_source
 
 
 def _column_differs(mine: pd.Series, theirs: pd.Series) -> int:
@@ -50,11 +50,12 @@ def run(sample: int, seed: int) -> int:
         theirs_all = theirs_all.merge(info, on="match_id", how="left")
 
     archives = {source: zipfile.ZipFile(cricsheet.archive_path(source)) for source in SOURCES}
+    json_archives = {source: zipfile.ZipFile(cricsheet.json_archive_path(source)) for source in SOURCES}
     identical, row_count_diff, mismatches = 0, [], {}
     try:
         for match_id in sorted(chosen):
-            balls, info_lines = cricsheet.read_match(archives[owner[match_id]], match_id)
-            mine = build_match_rows(balls, info_lines, owner[match_id])[columns]
+            source = owner[match_id]
+            mine = build_match(archives[source], json_archives[source], match_id, source)[0][columns]
             theirs = theirs_all[theirs_all["match_id"] == match_id].reset_index(drop=True)
             if len(mine) != len(theirs):
                 row_count_diff.append((match_id, len(mine), len(theirs)))
@@ -67,7 +68,7 @@ def run(sample: int, seed: int) -> int:
             else:
                 identical += 1
     finally:
-        for archive in archives.values():
+        for archive in [*archives.values(), *json_archives.values()]:
             archive.close()
 
     print(f"identical: {identical}")

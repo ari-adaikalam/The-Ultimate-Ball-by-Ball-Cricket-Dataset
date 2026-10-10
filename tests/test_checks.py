@@ -159,3 +159,98 @@ def test_the_legal_flag_must_match_wides_and_noballs_and_legal_balls_must_be_uni
     assert "disagrees" in checks.legal_deliveries(legal_frame(wrong))
     shared = rows[:3] + [(1, 1, 4, 0.1, None, None, True)]                                       # two legal deliveries with the same scorecard_ball
     assert "share a scorecard_ball" in checks.legal_deliveries(legal_frame(shared))
+
+
+def balls_with_wickets():
+    columns = ["match_id", "innings", "delivery_number", "player_dismissed", "wicket_type", "other_player_dismissed", "other_wicket_type",
+               "fielder_1", "fielder_1_id", "fielder_1_substitute"]
+    return pd.DataFrame([
+        (1, 1, 1, "A", "caught", None, None, "F", "f1", False),
+        (1, 1, 2, "B (2)", "run out", "C", "retired out", "G", "g1", True),
+        (1, 1, 3, None, None, None, None, None, None, None),
+    ], columns=columns).astype({"fielder_1_substitute": "boolean"})
+
+
+WICKETS = pd.DataFrame([
+    (1, 1, 1, 1, "A", "a", "caught"), (1, 1, 2, 1, "B", "b", "run out"), (1, 1, 2, 2, "C", "c", "retired out"),
+], columns=["match_id", "innings", "delivery_number", "wicket_number", "player_dismissed", "player_dismissed_id", "wicket_type"])
+FIELDERS = pd.DataFrame([
+    (1, 1, 1, 1, 1, "F", "f1", False), (1, 1, 2, 1, 1, "G", "g1", True), (1, 1, 2, 1, 2, "H", "h1", False),
+], columns=["match_id", "innings", "delivery_number", "wicket_number", "fielder_number", "fielder", "fielder_id", "substitute"])
+
+
+def test_wickets_agree_with_the_ball_file_ignoring_a_name_suffix():
+    assert checks.wickets_agree_with_balls(balls_with_wickets(), WICKETS) is None
+
+
+def test_a_wicket_that_differs_or_is_missing_is_reported():
+    wrong = WICKETS.copy()
+    wrong.loc[0, "wicket_type"] = "bowled"
+    assert "differ" in checks.wickets_agree_with_balls(balls_with_wickets(), wrong)
+    assert "wickets.csv has" in checks.wickets_agree_with_balls(balls_with_wickets(), WICKETS.iloc[:2])
+
+
+def test_fielders_must_belong_to_a_caught_stumped_or_run_out_wicket():
+    assert checks.fielders_belong_to_wickets(WICKETS, FIELDERS) is None
+    bowled = WICKETS.copy()
+    bowled.loc[0, "wicket_type"] = "bowled"
+    assert "not caught, stumped or run out" in checks.fielders_belong_to_wickets(bowled, FIELDERS)
+    orphan = FIELDERS.copy()
+    orphan.loc[0, "wicket_number"] = 3
+    assert "no match" in checks.fielders_belong_to_wickets(WICKETS, orphan)
+
+
+def test_the_ball_fielder_is_the_first_listed_fielder_of_wicket_one():
+    assert checks.ball_fielder_is_the_first_listed(balls_with_wickets(), FIELDERS) is None
+    wrong = balls_with_wickets()
+    wrong.loc[0, "fielder_1"] = "Z"
+    assert "differs" in checks.ball_fielder_is_the_first_listed(wrong, FIELDERS)
+
+
+def test_people_roles_and_teams():
+    people = pd.DataFrame({"role": ["player", "umpire"], "team": ["T", None]})
+    assert checks.people_rules(people) is None
+    assert "unknown roles" in checks.people_rules(pd.DataFrame({"role": ["coach"], "team": [None]}))
+    assert "no team" in checks.people_rules(pd.DataFrame({"role": ["player"], "team": [None]}))
+    assert "official has a team" in checks.people_rules(pd.DataFrame({"role": ["umpire"], "team": ["T"]}))
+
+
+def test_match_columns_are_sensible():
+    good = pd.DataFrame({"collection": ["ipl", "tests"], "balls_per_over": [6, 5], "start_date": ["2020-01-01", "2020-01-02"], "end_date": ["2020-01-01", "2020-01-06"]})
+    assert checks.match_columns(good) is None
+    assert "collection" in checks.match_columns(good.assign(collection=["ipl", "nope"]))
+    assert "balls_per_over" in checks.match_columns(good.assign(balls_per_over=[6, 7]))
+    assert "ends before" in checks.match_columns(good.assign(end_date=["2019-12-31", "2020-01-06"]))
+
+
+def test_non_boundary_is_only_on_fours_and_sixes_and_never_empty():
+    frame = pd.DataFrame({"runs_off_bat": [4, 6, 2, 0], "non_boundary": [True, False, False, False]})
+    assert checks.non_boundary_only_on_fours_and_sixes(frame) is None
+    assert "not a four or a six" in checks.non_boundary_only_on_fours_and_sixes(frame.assign(non_boundary=[True, False, True, False]))
+    assert "empty" in checks.non_boundary_only_on_fours_and_sixes(frame.assign(non_boundary=[True, None, False, False]))
+
+
+def test_missing_data_kinds_and_innings():
+    good = pd.DataFrame({"missing_type": ["reviews", "powerplays"], "innings": [None, 2]})
+    assert checks.missing_rules(good) is None
+    assert "unknown kinds" in checks.missing_rules(pd.DataFrame({"missing_type": ["toss"], "innings": [None]}))
+    assert "does not fit" in checks.missing_rules(pd.DataFrame({"missing_type": ["reviews", "powerplays"], "innings": [1, None]}))
+
+
+def test_miscounted_overs_must_match_the_legal_balls_of_the_ball_file():
+    ball = pd.DataFrame({"match_id": 1, "innings": 1, "over": [0] * 7 + [1] * 6, "is_legal_delivery": True})
+    assert checks.miscounted_agree_with_balls(ball, pd.DataFrame({"match_id": [1], "innings": [1], "over": [0], "balls": [7]})) is None
+    assert "do not match" in checks.miscounted_agree_with_balls(ball, pd.DataFrame({"match_id": [1], "innings": [1], "over": [0], "balls": [6]}))
+
+
+def test_dates_start_and_end_where_the_match_file_says():
+    dates = pd.DataFrame({"match_id": [1, 1, 2], "date_number": [1, 2, 1], "date": ["2020-01-01", "2020-01-02", "2020-02-01"]})
+    matches = pd.DataFrame({"match_id": [1, 2], "start_date": ["2020-01-01", "2020-02-01"], "end_date": ["2020-01-02", "2020-02-01"]})
+    assert checks.dates_agree_with_matches(dates, matches) is None
+    assert "differ" in checks.dates_agree_with_matches(dates, matches.assign(end_date=["2020-01-03", "2020-02-01"]))
+    assert "no dates" in checks.dates_agree_with_matches(dates.iloc[:2], matches)
+
+
+def test_external_ids_have_known_sources_and_no_cricinfo():
+    assert checks.external_id_rules(pd.DataFrame({"source": ["opta", "pulse"]})) is None
+    assert "Cricinfo" in checks.external_id_rules(pd.DataFrame({"source": ["opta", "cricinfo"]}))

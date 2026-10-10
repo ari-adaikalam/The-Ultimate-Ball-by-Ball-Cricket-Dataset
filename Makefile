@@ -5,6 +5,7 @@ PY := .venv/bin/python
 setup:
 	python3 -m venv .venv
 	$(PY) -m pip install -q -e ".[dev]"
+	@if [ -d api ]; then $(PY) -m pip install -q -e "api[dev]"; fi
 
 test:
 	$(PY) -m pytest -q

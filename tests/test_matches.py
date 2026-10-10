@@ -246,3 +246,11 @@ class TestBallColumns:
         balls = make_balls([{"ball": t, "actual_delivery": "0.1", "runs_off_bat": 0} for t in text])
         result = add_ball_columns(balls)
         assert not result.duplicated(["over", "ball_in_over"]).any()
+
+
+def test_non_boundary_is_true_only_where_cricsheet_marks_a_run_four_or_six_and_never_empty():
+    balls = make_balls([{"ball": "0.1", "runs_off_bat": 4, "actual_delivery": "0.1"}, {"ball": "0.2", "runs_off_bat": 4, "actual_delivery": "0.2"}])
+    balls["non_boundary"] = ["true", None]
+    rows = build_match_rows(balls, ["info,gender,male\n"], SOURCE)
+    assert rows["non_boundary"].tolist() == [True, False] and rows["non_boundary"].dtype == bool
+    assert build_match_rows(balls.drop(columns="non_boundary"), ["info,gender,male\n"], SOURCE)["non_boundary"].tolist() == [False, False]       # an older file with no such column

@@ -66,6 +66,40 @@ def test_balls_faced_does_not_count_wides_and_restarts_each_innings():
     assert "non-wide" in checks.balls_faced(carried)
 
 
+def totals_frame(rows):
+    columns = ["match_id", "innings", "delivery_number", "striker", "wides", "runs_off_bat", "total striker runs", "player_dismissed",
+               "player out runs", "player out balls faced"]
+    return pd.DataFrame(rows, columns=columns)
+
+
+TOTALS = [
+    (1, 1, 1, "A", None, 4, 4, None, None, None),
+    (1, 1, 2, "A", 1.0, 0, 4, None, None, None),
+    (1, 1, 3, "B", None, 1, 1, None, None, None),
+    (1, 1, 4, "B", None, 0, 1, "A", 4, 1),                  # the non striker is out, with the tally he had
+    (1, 2, 1, "A", None, 6, 6, None, None, None),            # a new innings starts again at 0
+]
+
+
+def test_running_totals_agree_with_a_recount():
+    assert checks.running_totals(totals_frame(TOTALS)) is None
+
+
+def test_running_totals_catch_a_carried_or_wrong_figure():
+    carried = totals_frame(TOTALS)
+    carried.loc[4, "total striker runs"] = 10
+    assert "total striker runs" in checks.running_totals(carried)
+    wrong = totals_frame(TOTALS)
+    wrong.loc[3, "player out runs"] = 5
+    assert "player out runs" in checks.running_totals(wrong)
+    wrong = totals_frame(TOTALS)
+    wrong.loc[3, "player out balls faced"] = 2             # counted the wide
+    assert "player out balls faced" in checks.running_totals(wrong)
+    stray = totals_frame(TOTALS)
+    stray.loc[0, "player out runs"] = 4
+    assert "no dismissal" in checks.running_totals(stray)
+
+
 def test_a_child_row_without_a_parent_is_a_problem():
     parent = pd.DataFrame({"match_id": [1], "innings": [1], "delivery_number": [1]})
     child = pd.DataFrame({"match_id": [1, 1], "innings": [1, 1], "delivery_number": [1, 9]})

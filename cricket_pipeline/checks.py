@@ -15,7 +15,7 @@ import pandas as pd
 KEY = ["match_id", "innings", "delivery_number"]
 BALL_COLUMNS = [
     "match_id", "innings", "delivery_number", "scorecard_ball", "over", "ball_in_over", "wides", "noballs", "is_legal_delivery", "striker", "striker_id", "bowler_id",
-    "striker balls faced",
+    "striker balls faced", "runs_off_bat", "total striker runs", "player_dismissed", "player out runs", "player out balls faced",
 ]
 
 
@@ -79,6 +79,41 @@ def balls_faced(ball: pd.DataFrame) -> str | None:
     return f"striker balls faced is not the count of non-wide rows on {wrong:,} rows" if wrong else None
 
 
+def running_totals(ball: pd.DataFrame) -> str | None:
+    """Recompute the striker's runs and the dismissed player's runs and balls faced from the rows alone.
+
+    The dismissed player's tally is the latest one that player had in the innings, and 0 for a batter who has not faced a ball.
+    Rows with no dismissal carry no player out values."""
+    ordered = ball.sort_values(KEY).reset_index(drop=True)
+    keys = [ordered.match_id, ordered.innings, ordered.striker]
+    runs = pd.to_numeric(ordered.runs_off_bat, errors="coerce").fillna(0)
+    faced = (pd.to_numeric(ordered.wides, errors="coerce").fillna(0) == 0).astype(int)
+    tally = pd.DataFrame({"match_id": ordered.match_id, "innings": ordered.innings, "player": ordered.striker.astype(str),
+                          "delivery_number": ordered.delivery_number,
+                          "runs": runs.groupby(keys, observed=True, dropna=False).cumsum(),
+                          "faced": faced.groupby(keys, observed=True, dropna=False).cumsum()}).sort_values("delivery_number")
+    problems = []
+    wrong = int((tally.sort_index().runs != ordered["total striker runs"]).sum())
+    if wrong:
+        problems.append(f"total striker runs is not the running sum of runs_off_bat on {wrong:,} rows")
+    out = ordered[ordered.player_dismissed.notna()]
+    if len(out):
+        asked = pd.DataFrame({"match_id": out.match_id, "innings": out.innings, "player": out.player_dismissed.astype(str),
+                              "delivery_number": out.delivery_number, "out_runs": out["player out runs"], "out_faced": out["player out balls faced"]})
+        joined = pd.merge_asof(asked.sort_values("delivery_number"), tally, on="delivery_number", by=["match_id", "innings", "player"])
+        joined[["runs", "faced"]] = joined[["runs", "faced"]].fillna(0)
+        wrong = int((joined.runs != joined.out_runs).sum())
+        if wrong:
+            problems.append(f"player out runs is not the dismissed player's runs on {wrong:,} dismissals")
+        wrong = int((joined.faced != joined.out_faced).sum())
+        if wrong:
+            problems.append(f"player out balls faced is not the dismissed player's balls faced on {wrong:,} dismissals")
+    stray = int(ball[ball.player_dismissed.isna()][["player out runs", "player out balls faced"]].notna().any(axis=1).sum())
+    if stray:
+        problems.append(f"{stray:,} rows with no dismissal carry a player out value")
+    return "; ".join(problems) if problems else None
+
+
 def missing_references(child: pd.DataFrame, parent: pd.DataFrame, columns: list[str], what: str) -> str | None:
     child_keys = pd.MultiIndex.from_frame(child[columns].drop_duplicates())
     parent_keys = pd.MultiIndex.from_frame(parent[columns].drop_duplicates())
@@ -125,15 +160,17 @@ def run_checks(out: Path) -> Report:
         return report
     available = pd.read_csv(ball_path, nrows=0).columns
     ball = pd.read_csv(ball_path, usecols=[c for c in BALL_COLUMNS if c in available],
-                       dtype={"striker": "category", "striker_id": "category", "bowler_id": "category"})
+                       dtype={"striker": "category", "striker_id": "category", "bowler_id": "category", "player_dismissed": "category"})
     report.record("ball file: key is unique", duplicate_keys(ball, KEY, "the ball file"))
     report.record("ball file: deliveries are numbered 1 to n in every innings", delivery_numbers(ball))
     if {"over", "ball_in_over"} <= set(ball.columns):
-        report.record("ball file: over and ball_in_over identify every delivery and agree with ball", over_and_position(ball))
+        report.record("ball file: over and ball_in_over identify every delivery and agree with scorecard_ball", over_and_position(ball))
     if {"wides", "noballs", "is_legal_delivery", "scorecard_ball"} <= set(ball.columns):
         report.record("ball file: is_legal_delivery matches wides and noballs, and legal deliveries have a unique scorecard_ball", legal_deliveries(ball))
     if {"wides", "striker", "striker balls faced"} <= set(ball.columns):
         report.record("ball file: balls faced is the count of non-wide rows in the innings", balls_faced(ball))
+    if {"wides", "striker", "runs_off_bat", "total striker runs", "player_dismissed", "player out runs", "player out balls faced"} <= set(ball.columns):
+        report.record("ball file: the striker's runs and the dismissed player's runs and balls faced match a recount", running_totals(ball))
     missing_ids = int(ball.striker_id.isna().sum()) if "striker_id" in ball else 0
     if missing_ids:
         report.notes.append(f"{missing_ids:,} rows have no striker_id and {int(ball.bowler_id.isna().sum()):,} have no bowler_id, because the player is not in Cricsheet's register")

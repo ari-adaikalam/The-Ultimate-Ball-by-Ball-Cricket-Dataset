@@ -139,7 +139,7 @@ def write_json_files(out: Path, tables: dict[str, pd.DataFrame]) -> dict[str, in
             table[column] = pd.to_numeric(table[column]).astype("Int64")
         if "target_overs" in table:
             table["target_overs"] = pd.to_numeric(table["target_overs"])
-        for column in ("start_scorecard_ball", "end_scorecard_ball"):
+        for column in ("start_ball", "end_ball"):
             if column in table:
                 table[column] = pd.to_numeric(table[column])
         table.sort_values(SORT_KEYS[name]).reset_index(drop=True)[TABLE_COLUMNS[name]].to_csv(out / file_name, index=False)

@@ -215,7 +215,7 @@ The first three columns are the key. For each of line, length, shot and directio
 | `scheduled_overs`, `balls_per_over` | Overs each innings was scheduled for (20 or 50, empty for Tests), and balls in an over (6, or 5 in some matches such as The Hundred) |
 | `match_type_number` | The number of the match among all Tests, ODIs or T20Is, for internationals |
 | `collection` | The Cricsheet collection: `tests`, `odis`, `t20s`, `ipl`, `wpl`, `bbl`, `wbb`, `cpl`, `psl`, `sat`, `ilt`, `hnd`, `mlc`, `lpl` or `bpl` |
-| `result_method`, `eliminator` | The method that decided the result when one was used (such as D/L), and the team that won the super over or bowl out that settled a tie |
+| `result_method`, `eliminator` | The method that decided the result when one was used (D/L or Awarded), and the team that won the super over or bowl out that settled a tie |
 | `umpire_1`, `umpire_2`, `tv_umpire`, `match_referee` | The first or common officials. `match_people.csv` has every official |
 | `won_by_innings` | True if the match was won by an innings. `winner_runs` then holds the runs of the margin |
 | `cricsheet_created`, `cricsheet_revision`, `cricsheet_data_version` | When Cricsheet created the match record, its revision number (which rises when the record is corrected), and the version of its data format. They let a correction be traced |
@@ -231,13 +231,13 @@ Each of these is keyed so a row can be told apart. `wicket_number` is the positi
 | `wicket_fielders.csv` | the wicket key and `fielder_number` | `fielder`, `fielder_id`, `substitute`. The fielders of each wicket. A fielder is empty when Cricsheet records only that a substitute fielded |
 | `match_people.csv` | `match_id`, `role`, `person_number` | `team`, `person`, `person_id`. The roles are `player`, `umpire`, `tv_umpire`, `match_referee` and `reserve_umpire`. `team` is filled for players only. `person_id` joins to `players.csv` only for players who batted or bowled |
 | `innings.csv` | `match_id`, `innings` | `batting_team`, `target_runs`, `target_overs`, `is_super_over`, `declared`, `penalty_runs_pre`, `penalty_runs_post`. Penalty runs awarded before or after an innings sit on no delivery, so add them to the innings total from the ball file |
-| `powerplays.csv` | `match_id`, `innings`, `powerplay_number` | `type` (mandatory, batting or fielding), `start_scorecard_ball`, `end_scorecard_ball`. A delivery is in the powerplay when its `scorecard_ball` lies from the first to the last |
+| `powerplays.csv` | `match_id`, `innings`, `powerplay_number` | `type` (mandatory, batting or fielding), `start_ball`, `end_ball`. These are written as over.ball and count every delivery, wides and no balls included, so a delivery is in the powerplay when `over` + `ball_in_over` / 10 lies from `start_ball` to `end_ball` |
 | `reviews.csv` | `match_id`, `innings`, `delivery_number` | `review_by`, `umpire`, `umpire_id`, `batter`, `batter_id`, `decision`, `review_type`, `umpires_call` |
 | `match_replacements.csv` | the delivery key and `replacement_number` | `kind`, `team`, `role`, `player_in`, `player_in_id`, `player_out`, `player_out_id`, `reason` |
 | `match_missing.csv` | `match_id`, `missing_number` | `missing_type` (powerplays, reviews, player_of_match or umpires), `innings` and `powerplay_type` for powerplays. What Cricsheet says it does not have for a match, so a missing record is not read as "none happened". A powerplay type can be listed twice for an innings when two are missing |
 | `miscounted_overs.csv` | `match_id`, `innings`, `over` | `balls`, `umpire`, `umpire_id`. Overs the umpires miscounted, with the legal balls the over really held (5 or 7, for example). It agrees with the ball file's legal balls in every case |
 | `innings_absent_hurt.csv` | `match_id`, `innings`, `player` | `player_id`. Batters recorded as absent hurt, who are not the same as players who did not bat |
-| `match_dates.csv` | `match_id`, `date_number` | `date`. Every date of a match as Cricsheet lists them. A multi-day match skips rest days |
+| `match_dates.csv` | `match_id`, `date_number` | `date`. Every date of a match as Cricsheet lists them, one row for each |
 | `player_external_ids.csv` | `player_id`, `source`, `external_id` | A person's ids in other systems: bcci, bigbash, cricbuzz, cricheroes, crichq, cricingif, cricketarchive, cricketworld, nvplay, opta and pulse. Cricinfo ids are not in this file |
 
 ## Data Preview

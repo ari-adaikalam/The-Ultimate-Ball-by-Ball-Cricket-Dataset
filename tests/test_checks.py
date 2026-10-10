@@ -254,3 +254,10 @@ def test_dates_start_and_end_where_the_match_file_says():
 def test_external_ids_have_known_sources_and_no_cricinfo():
     assert checks.external_id_rules(pd.DataFrame({"source": ["opta", "pulse"]})) is None
     assert "Cricinfo" in checks.external_id_rules(pd.DataFrame({"source": ["opta", "cricinfo"]}))
+
+
+def test_a_powerplay_starts_and_ends_on_a_delivery_of_its_innings():
+    ball = pd.DataFrame({"match_id": 1, "innings": 1, "over": [0, 0, 0, 0, 0, 0, 0, 1], "ball_in_over": [1, 2, 3, 4, 5, 6, 7, 1]})
+    good = pd.DataFrame({"match_id": [1], "innings": [1], "start_ball": [0.1], "end_ball": [0.7]})
+    assert checks.powerplay_bounds_are_deliveries(ball, good) is None
+    assert "not a delivery" in checks.powerplay_bounds_are_deliveries(ball, good.assign(end_ball=[3.4]))

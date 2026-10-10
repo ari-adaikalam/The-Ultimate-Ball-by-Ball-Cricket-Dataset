@@ -37,7 +37,7 @@ FIELDER_COLUMNS = ["match_id", "innings", "delivery_number", "wicket_number", "f
 PEOPLE_COLUMNS = ["match_id", "role", "person_number", "team", "person", "person_id"]
 NOTE_COLUMNS = ["match_id", "collection", "note"]
 INNINGS_COLUMNS = ["match_id", "innings", "batting_team", "target_runs", "target_overs", "is_super_over", "declared", "penalty_runs_pre", "penalty_runs_post"]
-POWERPLAY_COLUMNS = ["match_id", "innings", "powerplay_number", "type", "start_scorecard_ball", "end_scorecard_ball"]
+POWERPLAY_COLUMNS = ["match_id", "innings", "powerplay_number", "type", "start_ball", "end_ball"]
 REVIEW_COLUMNS = ["match_id", "innings", "delivery_number", "review_by", "umpire", "umpire_id", "batter", "batter_id", "decision", "review_type", "umpires_call"]
 REPLACEMENT_COLUMNS = ["match_id", "innings", "delivery_number", "replacement_number", "kind", "team", "role", "player_in", "player_in_id", "player_out", "player_out_id", "reason"]
 MISSING_COLUMNS = ["match_id", "missing_number", "missing_type", "innings", "powerplay_type"]
@@ -268,7 +268,7 @@ def innings_rows(match: dict, match_id: int) -> list[dict]:
 
 
 def powerplay_rows(match: dict, match_id: int) -> list[dict]:
-    return [{"match_id": match_id, "innings": number, "powerplay_number": order, "type": p.get("type"), "start_scorecard_ball": p.get("from"), "end_scorecard_ball": p.get("to")}
+    return [{"match_id": match_id, "innings": number, "powerplay_number": order, "type": p.get("type"), "start_ball": p.get("from"), "end_ball": p.get("to")}
             for number, innings in enumerate(match["innings"], start=1) for order, p in enumerate(innings.get("powerplays", []), start=1)]
 
 

@@ -257,6 +257,20 @@ def dates_agree_with_matches(dates: pd.DataFrame, matches: pd.DataFrame) -> str 
     return f"{len(missing):,} matches have no dates and {wrong:,} first or last dates differ from matches.csv" if missing or wrong else None
 
 
+def powerplay_bounds_are_deliveries(ball: pd.DataFrame, powerplays: pd.DataFrame) -> str | None:
+    """A powerplay starts and ends on a delivery of its innings, numbered over + ball_in_over / 10. Almost every one does.
+
+    An end such as 9.1 can be the tenth delivery of an over written the short way, so a small share is allowed to miss.
+    """
+    deliveries = ball[["match_id", "innings", "over", "ball_in_over"]].assign(number=lambda d: (d.over + d.ball_in_over / 10).round(1))[["match_id", "innings", "number"]].drop_duplicates()
+    missing = 0
+    for column in ("start_ball", "end_ball"):
+        asked = powerplays[["match_id", "innings", column]].assign(number=lambda d: d[column].round(1))
+        missing += int(asked.merge(deliveries, on=["match_id", "innings", "number"], how="left", indicator=True)._merge.eq("left_only").sum())
+    share = missing / max(2 * len(powerplays), 1)
+    return f"{missing:,} powerplay starts and ends ({share:.1%}) are not a delivery of their innings" if share > 0.01 else None
+
+
 def external_id_rules(external: pd.DataFrame) -> str | None:
     unknown = sorted(set(external.source) - EXTERNAL_SOURCES)
     return f"unknown sources {unknown}, and Cricinfo ids belong in players.csv only" if unknown else None
@@ -327,6 +341,8 @@ def run_checks(out: Path) -> Report:
             report.record("every powerplay is in an innings of innings.csv", missing_references(json_files["powerplays.csv"], json_files["innings.csv"], ["match_id", "innings"], "powerplay rows"))
     if "non_boundary" in ball.columns:
         report.record("non_boundary is set only on fours and sixes and never empty", non_boundary_only_on_fours_and_sixes(ball))
+    if "powerplays.csv" in json_files and {"over", "ball_in_over"} <= set(ball.columns):
+        report.record("powerplays start and end on a delivery of their innings", powerplay_bounds_are_deliveries(ball, json_files["powerplays.csv"]))
     if "match_missing.csv" in json_files:
         report.record("match_missing.csv: kinds are known and an innings is given for powerplays only", missing_rules(json_files["match_missing.csv"]))
     for name in ("miscounted_overs.csv", "innings_absent_hurt.csv"):

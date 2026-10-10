@@ -119,7 +119,7 @@ def test_innings_carry_targets_flags_and_penalty_runs_with_false_and_zero_as_def
 
 
 def test_powerplays_are_numbered_in_order():
-    assert [(p["powerplay_number"], p["type"], p["start_scorecard_ball"], p["end_scorecard_ball"]) for p in cj.powerplay_rows(MATCH, 5)] == [
+    assert [(p["powerplay_number"], p["type"], p["start_ball"], p["end_ball"]) for p in cj.powerplay_rows(MATCH, 5)] == [
         (1, "mandatory", 0.1, 9.6), (2, "batting", 10.1, 14.6)]
 
 

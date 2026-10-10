@@ -138,7 +138,7 @@ def write_json_work_files(data_folder):
         "wicket_fielders": [{"match_id": 1, "innings": 1.0, "delivery_number": 2.0, "wicket_number": 1.0, "fielder_number": 1.0, "fielder": "F", "fielder_id": "f", "substitute": False}],
         "people": [{"match_id": 1, "role": "player", "person_number": 1.0, "team": "A", "person": "P", "person_id": "p"}],
         "innings": [{"match_id": 1, "innings": 1.0, "batting_team": "A", "target_runs": None, "is_super_over": False, "declared": False, "penalty_runs_pre": 0.0, "penalty_runs_post": 5.0}],
-        "powerplays": [{"match_id": 1, "innings": 1.0, "powerplay_number": 1.0, "type": "mandatory", "start_ball": 0.1, "end_ball": 5.6}],
+        "powerplays": [{"match_id": 1, "innings": 1.0, "powerplay_number": 1.0, "type": "mandatory", "start_over": 0.0, "start_ball_in_over": 1.0, "start_delivery_number": 1.0, "end_over": 5.0, "end_ball_in_over": 6.0, "end_delivery_number": 36.0, "start_listed": "0.1", "end_listed": "5.6"}],
         "reviews": [], "replacements": [],
         "notes": [{"match_id": 2, "collection": "ipl", "note": "1 deliveries spell the striker differently in the JSON and the CSV"}],
     }

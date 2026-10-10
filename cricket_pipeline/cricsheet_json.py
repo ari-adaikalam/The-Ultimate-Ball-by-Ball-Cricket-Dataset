@@ -37,7 +37,8 @@ FIELDER_COLUMNS = ["match_id", "innings", "delivery_number", "wicket_number", "f
 PEOPLE_COLUMNS = ["match_id", "role", "person_number", "team", "person", "person_id"]
 NOTE_COLUMNS = ["match_id", "collection", "note"]
 INNINGS_COLUMNS = ["match_id", "innings", "batting_team", "target_runs", "target_overs", "is_super_over", "declared", "penalty_runs_pre", "penalty_runs_post"]
-POWERPLAY_COLUMNS = ["match_id", "innings", "powerplay_number", "type", "start_ball", "end_ball"]
+POWERPLAY_COLUMNS = ["match_id", "innings", "powerplay_number", "type", "start_over", "start_ball_in_over", "start_delivery_number", "end_over", "end_ball_in_over",
+                     "end_delivery_number", "start_listed", "end_listed"]
 REVIEW_COLUMNS = ["match_id", "innings", "delivery_number", "review_by", "umpire", "umpire_id", "batter", "batter_id", "decision", "review_type", "umpires_call"]
 REPLACEMENT_COLUMNS = ["match_id", "innings", "delivery_number", "replacement_number", "kind", "team", "role", "player_in", "player_in_id", "player_out", "player_out_id", "reason"]
 MISSING_COLUMNS = ["match_id", "missing_number", "missing_type", "innings", "powerplay_type"]
@@ -268,8 +269,48 @@ def innings_rows(match: dict, match_id: int) -> list[dict]:
 
 
 def powerplay_rows(match: dict, match_id: int) -> list[dict]:
-    return [{"match_id": match_id, "innings": number, "powerplay_number": order, "type": p.get("type"), "start_ball": p.get("from"), "end_ball": p.get("to")}
+    """The powerplays as Cricsheet lists them. Its from and to are over.ball written as one number, such as 5.11 for the 11th delivery of over 5, so the
+    text is kept as listed and `resolve_powerplays` turns it into an over, a position and a delivery number once the deliveries are known."""
+    return [{"match_id": match_id, "innings": number, "powerplay_number": order, "type": p.get("type"), "start_over": None, "start_ball_in_over": None,
+             "start_delivery_number": None, "end_over": None, "end_ball_in_over": None, "end_delivery_number": None,
+             "start_listed": None if p.get("from") is None else str(p["from"]), "end_listed": None if p.get("to") is None else str(p["to"])}
             for number, innings in enumerate(match["innings"], start=1) for order, p in enumerate(innings.get("powerplays", []), start=1)]
+
+
+def _position(listed: str | None, deliveries: dict[int, int], side: str) -> tuple[int | None, int | None, int | None]:
+    """(over, position in the over, delivery number) for one listed boundary, or Nones where it matches no single delivery.
+
+    Cricsheet writes the position after a point, so 5.11 is the 11th delivery. A position of 10 reads as 1 (5.10 is written 5.1), and so the written
+    .1 can be the 1st or the 10th delivery. Where both exist, a start is the first and an end is whichever is the last delivery of the over.
+    """
+    if listed is None:
+        return None, None, None
+    over_text, _, fraction = listed.partition(".")
+    over = int(over_text)
+    position = int(fraction or 0)
+    options = [position] + ([10] if len(fraction) == 1 and position == 1 else [])
+    present = [p for p in options if (over, p) in deliveries]
+    if len(present) > 1:
+        present = [1] if side == "start" else [p for p in present if p == max(p for (o, p) in deliveries if o == over)]
+    if len(present) != 1:
+        return (over, position, None) if len(options) == 1 else (over, None, None)
+    return over, present[0], deliveries[(over, present[0])]
+
+
+def resolve_powerplays(powerplays: list[dict], rows: pd.DataFrame) -> list[dict]:
+    """Fill in the over, position and delivery number of each powerplay boundary from the match's deliveries."""
+    ordered = rows.assign(delivery_number=rows.groupby("innings").cumcount() + 1)
+    by_innings = {}
+    for innings, over, position, number in zip(ordered["innings"], ordered["over"], ordered["ball_in_over"], ordered["delivery_number"]):
+        by_innings.setdefault(int(innings), {})[(int(over), int(position))] = int(number)
+    resolved = []
+    for row in powerplays:
+        deliveries = by_innings.get(row["innings"], {})
+        s_over, s_pos, s_number = _position(row["start_listed"], deliveries, "start")
+        e_over, e_pos, e_number = _position(row["end_listed"], deliveries, "end")
+        resolved.append({**row, "start_over": s_over, "start_ball_in_over": s_pos, "start_delivery_number": s_number,
+                         "end_over": e_over, "end_ball_in_over": e_pos, "end_delivery_number": e_number})
+    return resolved
 
 
 def review_rows(match: dict, match_id: int, names: Names) -> list[dict]:

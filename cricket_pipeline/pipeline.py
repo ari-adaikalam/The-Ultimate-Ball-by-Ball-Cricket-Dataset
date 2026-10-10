@@ -52,6 +52,7 @@ def build_match(archive: zipfile.ZipFile, json_archive: zipfile.ZipFile, match_i
     tables = cricsheet_json.extras(match, match_id, source.archive, registry)
     tables["notes"] += [{"match_id": match_id, "collection": source.archive, "note": note} for note in notes]
     tables["wickets"] = cricsheet_json.spell_like_the_ball_rows(tables["wickets"], rows)
+    tables["powerplays"] = cricsheet_json.resolve_powerplays(tables["powerplays"], rows)
     rows = add_fielder_columns(rows, cricsheet_json.first_fielders(tables["wicket_fielders"]))[CRICSHEET_COLUMNS]
     return rows, tables
 

@@ -256,8 +256,12 @@ def test_external_ids_have_known_sources_and_no_cricinfo():
     assert "Cricinfo" in checks.external_id_rules(pd.DataFrame({"source": ["opta", "cricinfo"]}))
 
 
-def test_a_powerplay_starts_and_ends_on_a_delivery_of_its_innings():
-    ball = pd.DataFrame({"match_id": 1, "innings": 1, "over": [0, 0, 0, 0, 0, 0, 0, 1], "ball_in_over": [1, 2, 3, 4, 5, 6, 7, 1]})
-    good = pd.DataFrame({"match_id": [1], "innings": [1], "start_ball": [0.1], "end_ball": [0.7]})
-    assert checks.powerplay_bounds_are_deliveries(ball, good) is None
-    assert "not a delivery" in checks.powerplay_bounds_are_deliveries(ball, good.assign(end_ball=[3.4]))
+def test_a_powerplay_boundary_is_exactly_the_delivery_it_names():
+    ball = pd.DataFrame({"match_id": 1, "innings": 1, "delivery_number": range(1, 13), "over": [0] * 12, "ball_in_over": range(1, 13)})
+    good = pd.DataFrame({"match_id": [1], "innings": [1], "start_over": [0], "start_ball_in_over": [1], "start_delivery_number": [1],
+                         "end_over": [0], "end_ball_in_over": [11], "end_delivery_number": [11]})
+    assert checks.powerplay_bounds_are_deliveries(ball, good) is None                    # the 11th delivery is delivery 11, not 1.1
+    assert "end" in checks.powerplay_bounds_are_deliveries(ball, good.assign(end_ball_in_over=[1]))
+    assert "after they end" in checks.powerplay_bounds_are_deliveries(ball, good.assign(start_delivery_number=[12], start_ball_in_over=[12]))
+    empty = good.assign(end_delivery_number=[None], end_ball_in_over=[None])
+    assert checks.powerplay_bounds_are_deliveries(ball, empty) is None and checks.unresolved_powerplay_bounds(empty) == 1

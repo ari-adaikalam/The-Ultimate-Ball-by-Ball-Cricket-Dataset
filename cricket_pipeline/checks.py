@@ -258,17 +258,26 @@ def dates_agree_with_matches(dates: pd.DataFrame, matches: pd.DataFrame) -> str 
 
 
 def powerplay_bounds_are_deliveries(ball: pd.DataFrame, powerplays: pd.DataFrame) -> str | None:
-    """A powerplay starts and ends on a delivery of its innings, numbered over + ball_in_over / 10. Almost every one does.
+    """Every powerplay boundary that names a delivery names exactly the delivery it says: the ball file's over and position for that
+    delivery number are the stated ones. There is no rounding and no share allowed to miss. A start never comes after its end."""
+    deliveries = ball[["match_id", "innings", "delivery_number", "over", "ball_in_over"]]
+    problems = []
+    for side in ("start", "end"):
+        named = powerplays[powerplays[f"{side}_delivery_number"].notna()]
+        joined = named.merge(deliveries, left_on=["match_id", "innings", f"{side}_delivery_number"], right_on=["match_id", "innings", "delivery_number"], how="left")
+        wrong = int(((joined.over != joined[f"{side}_over"]) | (joined.ball_in_over != joined[f"{side}_ball_in_over"])).sum())
+        if wrong:
+            problems.append(f"{wrong:,} powerplay {side}s are not at the over and position they state")
+    both = powerplays.dropna(subset=["start_delivery_number", "end_delivery_number"])
+    backwards = int((both.start_delivery_number > both.end_delivery_number).sum())
+    if backwards:
+        problems.append(f"{backwards:,} powerplays start after they end")
+    return "; ".join(problems) if problems else None
 
-    An end such as 9.1 can be the tenth delivery of an over written the short way, so a small share is allowed to miss.
-    """
-    deliveries = ball[["match_id", "innings", "over", "ball_in_over"]].assign(number=lambda d: (d.over + d.ball_in_over / 10).round(1))[["match_id", "innings", "number"]].drop_duplicates()
-    missing = 0
-    for column in ("start_ball", "end_ball"):
-        asked = powerplays[["match_id", "innings", column]].assign(number=lambda d: d[column].round(1))
-        missing += int(asked.merge(deliveries, on=["match_id", "innings", "number"], how="left", indicator=True)._merge.eq("left_only").sum())
-    share = missing / max(2 * len(powerplays), 1)
-    return f"{missing:,} powerplay starts and ends ({share:.1%}) are not a delivery of their innings" if share > 0.01 else None
+
+def unresolved_powerplay_bounds(powerplays: pd.DataFrame) -> int:
+    """Boundaries that match no single delivery. They keep their listed text and have no delivery number."""
+    return int(powerplays.start_delivery_number.isna().sum() + powerplays.end_delivery_number.isna().sum())
 
 
 def external_id_rules(external: pd.DataFrame) -> str | None:
@@ -342,7 +351,10 @@ def run_checks(out: Path) -> Report:
     if "non_boundary" in ball.columns:
         report.record("non_boundary is set only on fours and sixes and never empty", non_boundary_only_on_fours_and_sixes(ball))
     if "powerplays.csv" in json_files and {"over", "ball_in_over"} <= set(ball.columns):
-        report.record("powerplays start and end on a delivery of their innings", powerplay_bounds_are_deliveries(ball, json_files["powerplays.csv"]))
+        report.record("every powerplay boundary is exactly the delivery it names", powerplay_bounds_are_deliveries(ball, json_files["powerplays.csv"]))
+        unresolved = unresolved_powerplay_bounds(json_files["powerplays.csv"])
+        if unresolved:
+            report.notes.append(f"{unresolved:,} powerplay boundaries match no single delivery, so they have no delivery number")
     if "match_missing.csv" in json_files:
         report.record("match_missing.csv: kinds are known and an innings is given for powerplays only", missing_rules(json_files["match_missing.csv"]))
     for name in ("miscounted_overs.csv", "innings_absent_hurt.csv"):

@@ -7,7 +7,7 @@ FIGURES = {
     "competitions": [("Tests", 500, 53, 53, 98, 71, 0), ("IPL", 400, 68, 68, 100, 84, 100)],
     "first_innings_won": 65, "first_innings_lost": 40, "boundary_beyond_old": 87, "boundary_beyond_later": [99],
     "same_ground_old": 86, "same_ground_new": 99, "shot_named_low": 99, "shot_named_high": 99, "super_over_timestamps": 9,
-    "snapshot": "3 January 2027",
+    "snapshot": "downloads of 3 January 2027", "spelling_matches": 31,
 }
 
 README = """| File | One row per | Rows |
@@ -46,6 +46,9 @@ def test_tables_and_sentences_take_the_new_figures():
     assert "compared (86% against 99%)" in out
     assert "Shot names are filled for 99% of tracked balls in every era." in out
     assert "built from Cricsheet's downloads of 3 January 2027." in out
+    assert "(31 matches at the last count)" in fill_readme("Names differ (12 matches at the last count).", FIGURES)
+    two_days = fill_readme(README, {**FIGURES, "snapshot": "CSV downloads and the people register of 2 January 2027 and its JSON downloads of 3 January 2027"})
+    assert "built from Cricsheet's CSV downloads and the people register of 2 January 2027 and its JSON downloads of 3 January 2027." in two_days
 
 
 def test_filling_twice_changes_nothing():

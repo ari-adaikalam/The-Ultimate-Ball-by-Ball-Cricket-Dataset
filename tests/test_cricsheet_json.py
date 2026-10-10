@@ -119,8 +119,8 @@ def test_innings_carry_targets_flags_and_penalty_runs_with_false_and_zero_as_def
 
 
 def test_powerplays_are_numbered_in_order():
-    assert [(p["powerplay_number"], p["type"], p["start_ball"], p["end_ball"]) for p in cj.powerplay_rows(MATCH, 5)] == [
-        (1, "mandatory", 0.1, 9.6), (2, "batting", 10.1, 14.6)]
+    assert [(p["powerplay_number"], p["type"], p["start_listed"], p["end_listed"]) for p in cj.powerplay_rows(MATCH, 5)] == [
+        (1, "mandatory", "0.1", "9.6"), (2, "batting", "10.1", "14.6")]
 
 
 def test_reviews_and_replacements():
@@ -226,3 +226,42 @@ def test_the_same_missing_powerplay_listed_twice_keeps_both_rows():
     twice["info"]["missing"] = [{"powerplays": {"1": ["fielding", "fielding"]}}]
     rows = cj.missing_rows(twice, 5)
     assert [(r["missing_number"], r["powerplay_type"]) for r in rows] == [(1, "fielding"), (2, "fielding")]
+
+
+def balls_of(*overs):
+    """Deliveries of innings 1: each argument is how many deliveries an over had."""
+    rows = [(1, over, position) for over, count in enumerate(overs) for position in range(1, count + 1)]
+    return pd.DataFrame(rows, columns=["innings", "over", "ball_in_over"])
+
+
+def resolve(listed_from, listed_to, rows, side_rows=None):
+    base = {"match_id": 5, "innings": 1, "powerplay_number": 1, "type": "mandatory", "start_listed": listed_from, "end_listed": listed_to}
+    return cj.resolve_powerplays([{**base, "start_over": None, "start_ball_in_over": None, "start_delivery_number": None, "end_over": None,
+                                   "end_ball_in_over": None, "end_delivery_number": None}], rows)[0]
+
+
+def test_a_powerplay_boundary_becomes_an_over_a_position_and_a_delivery_number():
+    row = resolve("0.1", "1.6", balls_of(7, 6))                                 # over 0 had a wide, so over 1 starts at delivery 8
+    assert (row["start_over"], row["start_ball_in_over"], row["start_delivery_number"]) == (0, 1, 1)
+    assert (row["end_over"], row["end_ball_in_over"], row["end_delivery_number"]) == (1, 6, 13)
+    seventh = resolve("0.1", "0.7", balls_of(7, 6))
+    assert seventh["end_ball_in_over"] == 7 and seventh["end_delivery_number"] == 7
+
+
+def test_a_position_of_ten_or_more_is_read_as_a_position_not_a_decimal():
+    row = resolve("0.1", "0.11", balls_of(12))
+    assert (row["end_over"], row["end_ball_in_over"], row["end_delivery_number"]) == (0, 11, 11)               # 0.11 is the 11th delivery, not 1.1
+
+
+def test_a_written_point_one_is_the_first_delivery_for_a_start_and_the_last_of_the_over_for_an_end():
+    row = resolve("0.1", "0.1", balls_of(10))
+    assert row["start_ball_in_over"] == 1 and row["end_ball_in_over"] == 10 and row["end_delivery_number"] == 10         # the over has ten, and 0.1 ends it
+    short = resolve("0.1", "1.1", balls_of(6, 6))
+    assert short["end_ball_in_over"] == 1 and short["end_delivery_number"] == 7                                       # no tenth delivery, so it is the first
+    unclear = resolve("0.1", "0.1", balls_of(12))
+    assert unclear["end_over"] == 0 and unclear["end_ball_in_over"] is None and unclear["end_delivery_number"] is None   # the 10th is not the last, so it is not settled
+
+
+def test_a_boundary_that_matches_no_delivery_keeps_its_listed_text():
+    row = resolve("0.1", "5.6", balls_of(6))
+    assert (row["end_over"], row["end_ball_in_over"], row["end_delivery_number"], row["end_listed"]) == (5, 6, None, "5.6")

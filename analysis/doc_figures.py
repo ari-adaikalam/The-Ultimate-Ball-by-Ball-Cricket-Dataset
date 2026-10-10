@@ -78,13 +78,35 @@ def tracking_figures(out) -> dict:
     }
 
 
-def snapshot_date() -> str | None:
-    """The day of the newest Cricsheet download the files were built from, written as 9 October 2026."""
-    zips = [*(data_dir() / "cricsheet").glob("*_csv2.zip"), *(data_dir() / "cricsheet").glob("*_json.zip")]
-    if not zips:
+def _day(paths) -> str | None:
+    paths = list(paths)
+    if not paths:
         return None
-    day = datetime.fromtimestamp(max(z.stat().st_mtime for z in zips), timezone.utc)
+    day = datetime.fromtimestamp(max(p.stat().st_mtime for p in paths), timezone.utc)
     return f"{day.day} {day:%B %Y}"
+
+
+def snapshot_date() -> str | None:
+    """How the Cricsheet downloads are dated, as the words that follow "built from Cricsheet's": one day when the CSV and JSON ones agree, both when they do not.
+
+    The CSV downloads and the people register can be a day older than the JSON downloads, and the text says so.
+    """
+    folder = data_dir() / "cricsheet"
+    csv_day = _day([*folder.glob("*_csv2.zip"), *folder.glob("people.csv")])
+    json_day = _day(folder.glob("*_json.zip"))
+    if csv_day and json_day and csv_day != json_day:
+        return f"CSV downloads and the people register of {csv_day} and its JSON downloads of {json_day}"
+    day = csv_day or json_day
+    return f"downloads of {day}" if day else None
+
+
+def spelling_matches(out) -> int | None:
+    """Matches where Cricsheet's CSV and JSON files spell a name differently, from the build's review file."""
+    path = out / "json_review.csv"
+    if not path.exists():
+        return None
+    notes = pd.read_csv(path)
+    return int(notes[notes.note.str.contains("spell")].match_id.nunique())
 
 
 def figures(out=None) -> dict:
@@ -92,7 +114,7 @@ def figures(out=None) -> dict:
     empty = pd.read_csv(out / "empty_matches.csv", usecols=["match_id"])
     era_rows, competition_rows = coverage_tables(out)
     return {"file_rows": file_rows(out), "empty_matches": len(empty), "eras": era_rows, "competitions": competition_rows,
-            "snapshot": snapshot_date(), **tracking_figures(out)}
+            "snapshot": snapshot_date(), "spelling_matches": spelling_matches(out), **tracking_figures(out)}
 
 
 def n(value: int) -> str:
@@ -125,7 +147,9 @@ def fill_readme(text: str, f: dict) -> str:
     text = re.sub(r"\d+% of fours and sixes land beyond 0\.9 of the way to the boundary, against [\d% to]+ in later matches", f"{f['boundary_beyond_old']}% of fours and sixes land beyond 0.9 of the way to the boundary, against {percent_range(f['boundary_beyond_later'])} in later matches", text)
     text = re.sub(r"compared \(\d+% against \d+%\)", f"compared ({f['same_ground_old']}% against {f['same_ground_new']}%)", text)
     if f.get("snapshot"):
-        text = re.sub(r"built from Cricsheet's downloads of [^.]+\.", f"built from Cricsheet's downloads of {f['snapshot']}.", text)
+        text = re.sub(r"built from Cricsheet's [^.]+\.", f"built from Cricsheet's {f['snapshot']}.", text)
+    if f.get("spelling_matches") is not None:
+        text = re.sub(r"\((\d+) matches at the last count\)", f"({f['spelling_matches']} matches at the last count)", text)
     low, high = f["shot_named_low"], f["shot_named_high"]
     shot = f"Shot names are filled for {low}% of tracked balls in every era." if low == high else f"Shot names are filled for {low}% to {high}% of tracked balls, depending on the era."
     return re.sub(r"Shot names are filled for [^.]*\.", shot, text)

@@ -58,7 +58,7 @@ JSON_FILES = {
     "wicket_fielders": ("wicket_fielders.csv", ["innings", "delivery_number", "wicket_number", "fielder_number"]),
     "people": ("match_people.csv", ["person_number"]),
     "innings": ("innings.csv", ["innings", "target_runs", "penalty_runs_pre", "penalty_runs_post"]),
-    "powerplays": ("powerplays.csv", ["innings", "powerplay_number"]),
+    "powerplays": ("powerplays.csv", ["innings", "powerplay_number", "start_over", "start_ball_in_over", "start_delivery_number", "end_over", "end_ball_in_over", "end_delivery_number"]),
     "reviews": ("reviews.csv", ["innings", "delivery_number"]),
     "replacements": ("match_replacements.csv", ["innings", "delivery_number", "replacement_number"]),
     "missing": ("match_missing.csv", ["missing_number", "innings"]),
@@ -139,9 +139,6 @@ def write_json_files(out: Path, tables: dict[str, pd.DataFrame]) -> dict[str, in
             table[column] = pd.to_numeric(table[column]).astype("Int64")
         if "target_overs" in table:
             table["target_overs"] = pd.to_numeric(table["target_overs"])
-        for column in ("start_ball", "end_ball"):
-            if column in table:
-                table[column] = pd.to_numeric(table[column])
         table.sort_values(SORT_KEYS[name]).reset_index(drop=True)[TABLE_COLUMNS[name]].to_csv(out / file_name, index=False)
         rows[file_name] = len(table)
     return rows

@@ -20,4 +20,6 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - run: pip install -e ".[dev]"
+      - run: if [ -d api ]; then pip install -e "api[dev]"; fi
       - run: pytest -q
+      - run: if [ -d api/tests ]; then cd api && pytest -q; fi

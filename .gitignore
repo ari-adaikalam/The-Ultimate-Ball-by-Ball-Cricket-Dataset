@@ -13,6 +13,7 @@ kaggle.json
 # Raw and generated data (large, kept outside git)
 data/
 *.csv
+*.parquet
 
 # Local environment
 .venv/

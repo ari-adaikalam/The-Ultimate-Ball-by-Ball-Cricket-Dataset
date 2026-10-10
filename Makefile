@@ -1,6 +1,6 @@
 PY := .venv/bin/python
 
-.PHONY: setup test status ingest verify players
+.PHONY: setup test test-api api-data status ingest verify players
 
 setup:
 	python3 -m venv .venv
@@ -8,6 +8,13 @@ setup:
 
 test:
 	$(PY) -m pytest -q
+
+# The API has its own tests, and its data export reads data/output
+test-api:
+	cd api && ../$(PY) -m pytest -q
+
+api-data:
+	PYTHONPATH=api $(PY) -m cricket_api.export
 
 # Lists matches on Cricsheet that the dataset does not have yet
 status:

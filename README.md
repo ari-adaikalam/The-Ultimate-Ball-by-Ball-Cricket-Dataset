@@ -61,7 +61,7 @@ balls = balls.merge(matches[["match_id", "venue", "winner"]], on="match_id")
 balls = balls.merge(players[["player_id", "full name"]], left_on="striker_id", right_on="player_id")
 ```
 
-## Dataset Source
+## Source Credit
 
 - **Ball-by-ball & match metadata**: [Cricsheet](https://cricsheet.org/), released under the [Open Data Commons Attribution License 1.0](http://opendatacommons.org/licenses/by/1.0/)
 - **Ball tracking, wagon wheel and win probability** (`cricinfo_tracking.csv`), **player profiles** (`players.csv`) **and the commentary the text predictions are made from** (`cricinfo_text_predictions.csv`): [Cricinfo](https://www.cricinfo.com/)

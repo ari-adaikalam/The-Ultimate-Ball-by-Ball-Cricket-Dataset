@@ -18,6 +18,7 @@ def cricsheet_rows(match_id, balls=3, venue="Ground A", start="2024-05-01"):
         row = {c: None for c in CRICSHEET_COLUMNS}
         row.update({
             "match_id": match_id, "season": "2024", "start_date": start, "venue": venue, "innings": 1, "ball": round(0.1 * (ball + 1), 1),
+            "over": 0, "ball_in_over": ball + 1, "scorecard_ball": ball + 1, "is_legal_delivery": True,       # real Cricsheet rows always carry the over
             "batting_team": "A", "bowling_team": "B", "striker": "V Kohli", "striker_id": "cs_kohli", "non_striker": "X", "bowler": "J Anderson",
             "bowler_id": "cs_anderson", "runs_off_bat": 1, "extras": 0, "wicket": 0, "gender": "male", "event": "Test League", "match_number": 4,
             "toss_winner": "A", "toss_decision": "bat", "winner": "A", "winner_runs": 12, "format": "T20", "type": "Fran(IPL)",

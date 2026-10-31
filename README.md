@@ -4,13 +4,7 @@
 
 ## Overview
 
-Every delivery of every match that Cricsheet has for **Tests, ODIs, T20Is and twelve major T20 leagues** (IPL, WPL, BBL, WBBL, CPL, PSL, SA20, ILT20, The Hundred, MLC, LPL and BPL), as of the snapshot date below, in one dataset. Cricsheet supplies the facts of each ball: runs, extras, wickets and players. Cricinfo supplies how the ball was bowled and played, for the matches where it tracked it:
-
-- **Ball Line** (e.g., outside offstump, on the stumps)
-- **Ball Length** (e.g., full, good length, yorker)
-- **Shot Played** (e.g., cover drive, sweep, pull)
-- **Shot Direction** (e.g., mid wicket, third man) with the **wagon wheel coordinates** behind it
-- **Win probability, predicted score and delivery timestamp** for every tracked ball
+Every delivery of every match that Cricsheet has for **Tests, ODIs, T20Is and twelve major T20 leagues** (IPL, WPL, BBL, WBBL, CPL, PSL, SA20, ILT20, The Hundred, MLC, LPL and BPL), as of the snapshot date below, in one dataset. Cricsheet has no matches before 2001, so the dataset starts there. Cricsheet supplies the facts of each ball: runs, extras, wickets and players. Cricinfo supplies how the ball was bowled and played, for the matches where it tracked it: line, length, shot, shot direction with the wagon wheel point behind it, win probability, predicted score and delivery timestamp.
 
 The two sources sit in separate files and join on ids, so either one can be used alone. Every match in those Cricsheet collections is in the dataset. Where Cricinfo has nothing usable for a match, its Cricinfo cells stay empty.
 
@@ -33,21 +27,9 @@ The two sources sit in separate files and join on ids, so either one can be used
 | `cricinfo_text_predictions.csv` | ball with a predicted label | 1,654,041 |
 | `players.csv` | player | 9,374 |
 | `matches.csv` | match | 14,585 |
-| `wickets.csv` | wicket | 205,902 |
-| `wicket_fielders.csv` | fielder of a wicket | 141,706 |
-| `match_people.csv` | player or official in a match | 385,974 |
-| `innings.csv` | innings | 30,745 |
-| `powerplays.csv` | powerplay | 35,422 |
-| `reviews.csv` | DRS review | 16,923 |
-| `match_replacements.csv` | replacement in a match | 1,902 |
-| `match_missing.csv` | item Cricsheet says is missing | 1,577 |
-| `miscounted_overs.csv` | over the umpires miscounted | 395 |
-| `innings_absent_hurt.csv` | batter absent hurt in an innings | 185 |
-| `match_dates.csv` | date of a match | 17,683 |
-| `player_external_ids.csv` | id of a person in another system | 5,653 |
 | `coverage_report.csv` | match | 14,585 |
 
-Eleven of the last twelve files come from Cricsheet's JSON downloads, which hold more than its CSV files: every wicket and who fielded it, the players and officials of each match, targets, powerplays, DRS reviews, replacements and what Cricsheet knows is missing. `player_external_ids.csv` comes from Cricsheet's people register. The ball file holds only the first fielder of a wicket, and `wickets.csv` and `wicket_fielders.csv` hold all of them.
+Twelve smaller files come from Cricsheet's JSON downloads and its people register: wickets, the fielders of each wicket, the people in each match, innings, powerplays, DRS reviews, replacements, what Cricsheet says is missing, miscounted overs, batters absent hurt, match dates and ids in other systems. All files and every column are in the [column reference](docs/columns.md).
 
 Join the files on ids, never on names. The ball file holds only the short match and player columns. The Cricinfo tracking sits in its own file, one row per tracked ball, joined on `match_id`, `innings` and `delivery_number`. Bring in the rest like this:
 
@@ -60,6 +42,10 @@ balls = balls.merge(tracking, on=["match_id", "innings", "delivery_number"], how
 balls = balls.merge(matches[["match_id", "venue", "winner"]], on="match_id")
 balls = balls.merge(players[["player_id", "full name"]], left_on="striker_id", right_on="player_id")
 ```
+
+## Columns
+
+Every column of every file, and what it means, is in the [column reference](docs/columns.md).
 
 ## Source Credit
 
@@ -81,9 +67,9 @@ It is also a data engineering project. Getting from those pages to a table that 
 ## How It Works
 
 1. **Ingest**: download the 15 Cricsheet collections and rebuild every match.
-2. **Capture**: open each match's commentary page and load every over of every innings, Super Overs included. Matches with nothing useful on Cricinfo are noted and not scrolled.
-3. **Pair**: attach each Cricinfo ball to its Cricsheet row. The innings, position, total runs, striker and bowler must all agree. A ball that fails any check stays empty and is listed in a review report. If Cricinfo left whole overs out, the overs it has are still paired, one over at a time.
-4. **Derive**: compute the shot direction name, angle, distance to the boundary and in-ring flag from Cricinfo's wagon wheel point and the batter's hand, using Cricinfo's own zone layout. Left-handers are mirrored.
+2. **Capture**: read each match's Cricinfo commentary page over by over, Super Overs included. Matches with nothing useful on Cricinfo are noted and not scrolled.
+3. **Pair**: attach each Cricinfo ball to its Cricsheet row only when the innings, position, total runs, striker and bowler all agree. A ball that fails any check stays empty and is listed in a review report.
+4. **Derive**: compute the shot direction name, angle, distance to the boundary and in-ring flag from Cricinfo's wagon wheel point and the batter's hand. Left-handers are mirrored.
 5. **Build**: write the 18 data files and the review reports.
 
 The pipeline diagrams are in [docs/architecture.md](docs/architecture.md), and the reasons behind each choice are in [docs/design_decisions.md](docs/design_decisions.md).
@@ -101,144 +87,9 @@ python -m cricket_pipeline build
 
 The files land in `data/output/`, with the Cricinfo columns left empty. The Cricinfo capture is a separate step (`python -m cricket_pipeline capture`) that drives a normal Chrome window, paces its requests and uses no stealth tools or proxies.
 
-## Key Features
-
-- **Two sources, two files**: the Cricsheet facts and the Cricinfo tracking are separate, so each can be used or removed on its own.
-- **Joins on ids**: player and match ids join the files. Names are never a key.
-- **Nothing guessed**: a missing Cricinfo value is an empty cell. No value is filled in from commentary text or from a model inside the main files.
-- **Checked pairing**: every Cricinfo ball is verified against its Cricsheet row before it is attached.
-- **Wagon wheel columns**: Cricinfo's raw point and zone are kept, with the angle, distance and ring flag derived from them.
-- **Separate predictions**: balls with commentary but no tracking get predicted labels in their own file, each with a calibrated confidence. They never mix into the tracked data.
-- **Coverage report**: for every match, how many balls have each Cricinfo column filled with a value Cricinfo recorded. Predictions are not counted in it.
-
 ## Text Predictions
 
-`cricinfo_text_predictions.csv` is a separate file of predictions for balls that have commentary text but no Cricinfo tracking value. It gives a predicted line, length, shot and direction, each with a confidence. Every label is one of Cricinfo's own. Nothing in the other files is filled in from it, and Cricinfo's commentary text is not published. The file has no confidence cutoff: it lists every prediction the model made, whatever its confidence. The share of balls with a recorded or a predicted value is in Results & Quality.
-
-- **Confidence** is the estimated chance that the label matches what Cricinfo would have recorded. It is measured on matches the model never saw, where predictions at 0.7 matched Cricinfo about 70% of the time. Treat it as a rate across many balls.
-- **Explicit** is 1 when the commentary names that label outright and no other, for example "full toss" or "back of a length" (which Cricinfo calls short of a good length). Those predictions are right more often.
-- **Empty cells** mean Cricinfo already has a value, there is no commentary text, or, for direction, the model judges that the ball was not hit.
-
-On held-out matches the models score 63 to 65% for line, 59 to 62% for length, 60 to 68% for shot and 65 to 71% for direction. Commentary and Cricinfo's tracking disagree often, even when the text is clear, so the confidence matters more than the label. Line and length for 2001 to 2013 have their confidences lowered by 2.2 and 5.6 points, because Cricinfo has no values there to test against.
-
-```python
-predictions = pd.read_csv("cricinfo_text_predictions.csv")
-sure = predictions[(predictions.length_confidence >= 0.7) | (predictions.length_explicit == 1)]
-balls = balls.merge(predictions, on=["match_id", "innings", "delivery_number"], how="left")
-```
-
-How it was built, what was tried and how it is checked: [docs/predictions_file.md](docs/predictions_file.md). Accuracy by label, with confusion matrices: [docs/predictions_per_class.md](docs/predictions_per_class.md). The phrases behind the explicit flag: [docs/phrase_meanings.md](docs/phrase_meanings.md).
-
-## Columns
-
-### ball_by_ball_data.csv (50 columns)
-
-**Ball and match position**
-
-| Column | Meaning |
-|---|---|
-| `match_id` | Cricsheet match id |
-| `season`, `start_date` | Season label as Cricsheet gives it, and the first day of the match |
-| `innings` | The innings of the match, in the order they were batted. A Test has up to 4. A limited overs match has 1 and 2, and a Super Over adds 3 and 4, then 5 to 8 if it is tied again |
-| `delivery_number` | Position of the delivery in its innings: 1 for the first, 2 for the next, and so on, with wides and no balls counted. With `match_id` and `innings` it identifies a delivery, and it joins `cricinfo_tracking.csv` |
-| `over` | Over number, counted from 0, so 0 is the first over |
-| `ball_in_over` | Position of the delivery in its over, counting every delivery, so it can pass 6 when the over has wides or no balls. With `over` it identifies a delivery within an innings. Cricsheet's own over.ball number is left out, because the 10th delivery of an over (4.10) reads the same as the first (4.1) |
-| `scorecard_ball` | The ball as a scorecard numbers it, as over.ball. The legal deliveries are numbered 1, 2, 3 and so on in order (6 in a normal over), and a wide or no ball has the number of the legal ball that replaces it, so it is not unique. Among legal deliveries it is. This is Cricsheet's `actual_delivery` |
-| `is_legal_delivery` | True unless the delivery is a wide or a no ball. Byes and leg byes are legal. The `wides` and `noballs` columns are blank when there is none, so use this and not a comparison with 0 |
-| `batting_team`, `bowling_team` | Team names |
-| `gender`, `event`, `format`, `type` | Match labels. `event` is the competition name. `type` is Intl or Fran(league), for example Fran(IPL) |
-
-**People**
-
-| Column | Meaning |
-|---|---|
-| `striker`, `non_striker`, `bowler` | Names as Cricsheet writes them |
-| `striker_id`, `bowler_id` | Cricsheet player ids. Use these to join to `players.csv` |
-| `striker_age`, `bowler_age` | Age in whole years on the first day of the match. Dates of birth are not published |
-| `country_striker`, `batting style_striker`, `bowling style_striker`, `playing role_striker` | From the Cricinfo profile. The same four for the bowler end in `_bowler` |
-
-**Runs, extras and wickets (from Cricsheet)**
-
-| Column | Meaning |
-|---|---|
-| `runs_off_bat`, `extras` | Runs the batter scored off the bat, and runs from extras (wides, no balls, byes, leg byes and penalty added together). The team's runs on the ball are the two added. A no ball can still have runs off the bat |
-| `wides`, `noballs`, `byes`, `legbyes`, `penalty` | The extras split out. `wides` includes any runs taken or a boundary on top of the wide's own run. `noballs` is the run for the no ball itself, normally 1, and runs off the bat on a no ball are in `runs_off_bat`. Byes and leg byes are not credited to the batter. Blank when there is none |
-| `wicket` | 1 if a batter's innings ended on this ball, for any reason in `wicket_type`. That includes retired hurt and retired out, so filter on `wicket_type` to count only dismissals |
-| `wicket_type`, `player_dismissed` | How the batter left the innings, and who it was. It can be the non striker, for example in a run out. `wicket_type` also holds retirements, which are not dismissals by the bowling side |
-| `other_wicket_type`, `other_player_dismissed` | A second batter leaving the innings on the same ball, which is rare |
-| `striker balls faced`, `total striker runs` | The striker's balls faced and runs off the bat so far in this innings, starting again at 0 in each innings. A wide is not a ball faced and a no ball is |
-| `player out runs`, `player out balls faced` | The batter's runs and balls faced in this innings when their innings ended, on that ball. Blank on other balls |
-| `non_boundary` | True for a four or six off the bat that was run and not hit to the boundary, which Cricsheet marks. A four or six with this False reached the boundary. Count boundaries with `runs_off_bat` of 4 or 6 and `non_boundary` False |
-| `fielder_1`, `fielder_1_id`, `fielder_1_substitute` | The first listed fielder of the ball's first wicket: the catcher, the keeper on a stumping, or the first fielder named on a run out. Empty when no fielder is involved, or when Cricsheet records only that a substitute fielded. `wicket_fielders.csv` has every fielder |
-
-### cricinfo_tracking.csv (18 columns)
-
-One row per ball that Cricinfo tracked, so a ball with no Cricinfo data has no row. A left join from the ball file leaves those balls empty. The first three columns are the key: `match_id`, `innings` and `delivery_number`. Within a column, an empty cell means Cricinfo had no value for that ball.
-
-| Column | Meaning |
-|---|---|
-| `ball_length` | Where the ball pitched: full toss, yorker, full, good length, short of a good length, short |
-| `ball_line` | outside offstump, wide outside offstump, on the stumps, down leg, wide down leg |
-| `shot_played` | Cricinfo's shot name, for example cover drive, flick, defended, left alone |
-| `shot_control` | in control or not in control |
-| `wagon_x`, `wagon_y` | Cricinfo's wagon wheel point for where the ball went |
-| `wagon_zone` | Cricinfo's zone number, 1 to 8 |
-| `shot_direction` | The zone as a name: fine leg, square leg, mid wicket, mid on, mid off, cover, point, third man. Left-handers are mirrored, so cover is always the off side |
-| `wagon_angle` | 0 to 360 degrees, 0 straight behind the batter, mirrored for left-handers |
-| `wagon_distance` | Fraction of the way to the boundary from the centre. Can be above 1 |
-| `wagon_in_ring` | True if the shot ended inside the 30 yard circle |
-| `ball_timestamp` | Cricinfo's record time for the delivery, in UTC |
-| `win_probability` | The batting side's chance of winning at that ball, 0 to 100, in both innings |
-| `predicted_score` | Cricinfo's projected innings score at that ball |
-| `ball_events` | Reviews, dropped catches and other events Cricinfo logged on the ball |
-
-Cricinfo records no line, length, shot or wagon point for Super Over balls, so they have almost no rows here.
-
-### players.csv (14 columns)
-
-`player_id` (the same value as `striker_id` and `bowler_id`), `name`, `cricinfo_id`, `full name`, `gender`, `country`, `batting style`, `bowling style`, `playing role`, `fielding style` (in practice only wicketkeeper), `first international year`, `last international year`, `major teams`, `image url`.
-
-`image url` is a link to a picture on Cricinfo's servers. The pictures are not part of the dataset, and a link can stop working.
-
-### cricinfo_text_predictions.csv (15 columns)
-
-The first three columns are the key. For each of line, length, shot and direction there are three columns: the label (`line`, `length`, `shot`, `direction`), `<field>_confidence` (0 to 1) and `<field>_explicit` (1 if the commentary names the label outright, else 0). Shot labels follow the match's era: the coarser 2001 to 2013 names or the finer 2014 on names. Direction uses the same eight names as `shot_direction` in `cricinfo_tracking.csv`.
-
-### matches.csv (38 columns)
-
-`match_id`, `season`, `start_date`, `gender`, `event`, `format`, `type`, `venue`, `match_number`, `toss_winner`, `toss_decision`, `player_of_match`, `player_of_match_2`, `winner`, `winner_runs`, `winner_wickets`, `outcome`, then:
-
-| Column | Meaning |
-|---|---|
-| `team_1`, `team_2` | The two teams, in Cricsheet's order. It does not mean the home team |
-| `city`, `end_date` | City of the ground where Cricsheet has it, and the last day of the match |
-| `scheduled_overs`, `balls_per_over` | Overs each innings was scheduled for (20 or 50, empty for Tests), and balls in an over (6, or 5 in some matches such as The Hundred) |
-| `match_type_number` | The number of the match among all Tests, ODIs or T20Is, for internationals |
-| `collection` | The Cricsheet collection: `tests`, `odis`, `t20s`, `ipl`, `wpl`, `bbl`, `wbb`, `cpl`, `psl`, `sat`, `ilt`, `hnd`, `mlc`, `lpl` or `bpl` |
-| `result_method`, `eliminator` | The method that decided the result when one was used (D/L or Awarded), and the team that won the super over or bowl out that settled a tie |
-| `umpire_1`, `umpire_2`, `tv_umpire`, `match_referee` | The first or common officials. `match_people.csv` has every official |
-| `won_by_innings` | True if the match was won by an innings. `winner_runs` then holds the runs of the margin |
-| `cricsheet_created`, `cricsheet_revision`, `cricsheet_data_version` | When Cricsheet created the match record, its revision number (which rises when the record is corrected), and the version of its data format. They let a correction be traced |
-| `event_group`, `event_sub_name`, `event_stage` | The group (such as A or B), the sub-division and the stage (such as Final or Semi Final) of the event, where Cricsheet has them |
-
-### The files from Cricsheet's JSON
-
-Each of these is keyed so a row can be told apart. `wicket_number` is the position of the wicket in Cricsheet's list for a delivery: wicket 1 is `player_dismissed` and wicket 2 is `other_player_dismissed` in the ball file. Names are spelled as in the ball file.
-
-| File | Key | Columns |
-|---|---|---|
-| `wickets.csv` | `match_id`, `innings`, `delivery_number`, `wicket_number` | `player_dismissed`, `player_dismissed_id`, `wicket_type`. Every wicket, including the second and later wickets the ball file cannot hold |
-| `wicket_fielders.csv` | the wicket key and `fielder_number` | `fielder`, `fielder_id`, `substitute`. The fielders of each wicket. A fielder is empty when Cricsheet records only that a substitute fielded |
-| `match_people.csv` | `match_id`, `role`, `person_number` | `team`, `person`, `person_id`. The roles are `player`, `umpire`, `tv_umpire`, `match_referee` and `reserve_umpire`. `team` is filled for players only. `person_id` joins to `players.csv` only for players who batted or bowled |
-| `innings.csv` | `match_id`, `innings` | `batting_team`, `target_runs`, `target_overs`, `is_super_over`, `declared`, `penalty_runs_pre`, `penalty_runs_post`. Penalty runs awarded before or after an innings sit on no delivery, so add them to the innings total from the ball file |
-| `powerplays.csv` | `match_id`, `innings`, `powerplay_number` | `type` (mandatory, batting or fielding), then for the start and the end of the powerplay the over, the position in the over and the `delivery_number` in the ball file (`start_over`, `start_ball_in_over`, `start_delivery_number`, `end_over`, `end_ball_in_over`, `end_delivery_number`), and the boundaries as Cricsheet lists them (`start_listed`, `end_listed`). A delivery is in the powerplay when its `delivery_number` lies from `start_delivery_number` to `end_delivery_number`. Cricsheet writes a boundary as over.position, so 5.11 is the 11th delivery of over 5, and a 10th delivery reads as .1. Where the listed boundary matches no single delivery the delivery number is empty (6 boundaries) |
-| `reviews.csv` | `match_id`, `innings`, `delivery_number` | `review_by`, `umpire`, `umpire_id`, `batter`, `batter_id`, `decision`, `review_type`, `umpires_call` |
-| `match_replacements.csv` | the delivery key and `replacement_number` | `kind`, `team`, `role`, `player_in`, `player_in_id`, `player_out`, `player_out_id`, `reason` |
-| `match_missing.csv` | `match_id`, `missing_number` | `missing_type` (powerplays, reviews, player_of_match or umpires), `innings` and `powerplay_type` for powerplays. What Cricsheet says it does not have for a match, so a missing record is not read as "none happened". A powerplay type can be listed twice for an innings when two are missing |
-| `miscounted_overs.csv` | `match_id`, `innings`, `over` | `balls`, `umpire`, `umpire_id`. Overs the umpires miscounted, with the legal balls the over really held (5 or 7, for example). It agrees with the ball file's legal balls in every case |
-| `innings_absent_hurt.csv` | `match_id`, `innings`, `player` | `player_id`. Batters recorded as absent hurt, who are not the same as players who did not bat |
-| `match_dates.csv` | `match_id`, `date_number` | `date`. Every date of a match as Cricsheet lists them, one row for each |
-| `player_external_ids.csv` | `player_id`, `source`, `external_id` | A person's ids in other systems: bcci, bigbash, cricbuzz, cricheroes, crichq, cricingif, cricketarchive, cricketworld, nvplay, opta and pulse. Cricinfo ids are not in this file |
+`cricinfo_text_predictions.csv` holds predicted line, length, shot and direction for balls that have commentary text but no Cricinfo tracking value, each with a confidence from 0 to 1. Every label is one of Cricinfo's own, nothing in the other files is filled in from it, and Cricinfo's commentary text is not published. On held-out matches the models score 59 to 71% depending on the field, so the confidence matters more than the label. How it was built and checked is in [docs/predictions_file.md](docs/predictions_file.md), the accuracy by label in [docs/predictions_per_class.md](docs/predictions_per_class.md), and the phrases behind the explicit flag in [docs/phrase_meanings.md](docs/phrase_meanings.md).
 
 ## Data Preview
 
@@ -255,9 +106,7 @@ Six deliveries from an IPL match in 2025, with the tracking file joined on. The 
 
 ## Results & Quality
 
-Share of balls with each Cricinfo column filled, from `coverage_report.csv`. These are values Cricinfo recorded. The text predictions in `cricinfo_text_predictions.csv` are not counted here, and the figures after these tables give the share with predictions included.
-
-**By era**
+Share of balls with each Cricinfo column filled, by era, from `coverage_report.csv`. These are values Cricinfo recorded, and the text predictions are not counted. The competition by competition figures and the share with predictions included are in [docs/results_and_quality.md](docs/results_and_quality.md).
 
 | Era | Balls | Line | Length | Shot | Wagon point | Win probability |
 |---|---|---|---|---|---|---|
@@ -265,61 +114,9 @@ Share of balls with each Cricinfo column filled, from `coverage_report.csv`. The
 | 2014 to 2019 | 1,470,104 | 68% | 68% | 73% | 60% | 13% |
 | 2020 and later | 2,719,631 | 66% | 66% | 66% | 55% | 27% |
 
-**By competition**
-
-| Competition | Balls | Line | Length | Shot | Wagon point | Win probability |
-|---|---|---|---|---|---|---|
-| Tests | 1,769,426 | 53% | 53% | 98% | 71% | 0% |
-| ODIs | 1,695,099 | 42% | 42% | 80% | 65% | 5% |
-| T20Is | 1,306,002 | 26% | 26% | 32% | 27% | 16% |
-| IPL | 295,732 | 68% | 68% | 100% | 84% | 100% |
-| BBL | 153,250 | 71% | 71% | 71% | 60% | 99% |
-| WBBL | 118,656 | 48% | 48% | 47% | 41% | 15% |
-| BPL | 111,232 | 53% | 53% | 53% | 44% | 42% |
-| CPL | 103,717 | 84% | 84% | 83% | 68% | 37% |
-| PSL | 83,799 | 78% | 78% | 78% | 65% | 79% |
-| The Hundred | 75,636 | 100% | 100% | 99% | 84% | 0% |
-| LPL | 32,917 | 99% | 99% | 99% | 82% | 98% |
-| ILT20 | 31,407 | 98% | 98% | 98% | 80% | 88% |
-| SA20 | 29,020 | 100% | 100% | 99% | 83% | 96% |
-| MLC | 25,529 | 100% | 100% | 99% | 83% | 96% |
-| WPL | 20,656 | 99% | 99% | 99% | 85% | 72% |
-
-**Recorded values and availability with predictions**
-
-For line, length, shot and direction there are two figures. Both use the same denominator, all 5,852,078 deliveries in the ball file, and each delivery counts once. A delivery is identified by `match_id`, `innings` and `delivery_number`, and no key repeats in `ball_by_ball_data.csv`, `cricinfo_tracking.csv` or `cricinfo_text_predictions.csv`.
-
-- **Recorded** is the share of deliveries that have a value for the field in `cricinfo_tracking.csv`.
-- **Recorded or predicted** is the share that have a recorded value or a value in `cricinfo_text_predictions.csv`. A prediction is only made where no value is recorded, so no delivery is in both and the recorded and predicted-only shares add up to this figure.
-
-| Field | Recorded | Predicted, no value recorded | Recorded or predicted |
-|---|---|---|---|
-| Line | 47.5% (2,780,332) | 27.9% (1,634,290) | 75.4% (4,414,622) |
-| Length | 47.5% (2,780,911) | 27.9% (1,633,741) | 75.4% (4,414,652) |
-| Shot | 74.9% (4,383,558) | 5.2% (306,455) | 80.1% (4,690,013) |
-| Direction | 59.1% (3,458,016) | 4.8% (280,142) | 63.9% (3,738,158) |
-
-These figures are for the snapshot described under Dataset Source. No confidence cutoff is applied: every prediction in the file is counted, whatever its confidence, and the confidences are in the file for anyone who wants to set their own. `coverage_report.csv` and the tables above count recorded values only, and predictions are never in them. The combined figure says how many deliveries have a label of either kind. It is not a measure of accuracy. How often a predicted label matches what Cricinfo records is what each prediction's confidence column estimates.
-
-Not every match has every Cricinfo field. Cricinfo did not record tracking for all matches, and coverage varies by competition and year.
-
-- A ball has Cricinfo values only when it matched its Cricsheet ball on innings, position, runs and both players. Anything that failed is left empty. The build writes the matches with such disagreements to a local report, `review.csv`, which is not published.
-- Cricsheet corrects old matches, so rows can differ between versions of the dataset.
-
 ## Limitations / Scope
 
-- Cricsheet has no matches before 2001, so the dataset starts there.
-- The ball file records at most two wickets on a delivery. `wickets.csv` has all of them. One women's T20I has a ball with ten retired out wickets.
-- Not every match has every extra. Officials are missing for 438 matches, the city for 792, and powerplays for the innings of Tests and Super Overs (which have none) and for 479 other innings, mostly ODIs before July 2005. `match_missing.csv` lists what Cricsheet itself says is missing, for 954 matches. DRS reviews exist only where DRS was used.
-- Cricsheet's CSV and JSON files sometimes spell a player's name differently. Names in the new files follow the ball file, and ids are the safe way to join (31 matches at the last count).
-- About 4,300 matches, mostly T20Is between associate teams, have no Cricinfo tracking or commentary. They stay in the dataset with empty Cricinfo columns and show a Cricinfo count of 0 for every field in `coverage_report.csv`.
-- Line and length exist from about 2014. Shot names before 2014 are coarser (for example "off side drive on front foot") than the ones after (for example "cover drive").
-- Cricinfo leaves some overs out of its commentary. Balls in those overs have no row in `cricinfo_tracking.csv`.
-- Super Over balls are in the main file and line up with Cricinfo's ball by ball, but Cricinfo has no line, length, shot or wagon point for them. Only 7 have a timestamp, and none has win probability.
-- Wagon wheel points before 2014 are less exact: 88% of fours and sixes land beyond 0.9 of the way to the boundary, against 98% to 100% in later matches. The gap stays when only grounds that appear in both periods are compared (88% against 100%). Shot names are filled for 95% to 99% of tracked balls, depending on the era.
-- `win_probability` is a prediction. At the end of the first innings it averages 64 when the side that batted first went on to win and 39 when it lost. In the second innings it ends at 100 or 0.
-- The text predictions are estimates. Their accuracy is 59 to 71% depending on the field, and the 2001 to 2013 line and length predictions cannot be tested directly.
-- The 4,300 matches with no Cricinfo commentary have no tracking and no predictions.
+What the dataset leaves out, and where the Cricinfo fields are thin or less exact, is in [docs/limitations.md](docs/limitations.md).
 
 ## Citation
 

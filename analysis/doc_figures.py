@@ -191,16 +191,27 @@ def fill_readme(text: str, f: dict) -> str:
     return re.sub(r"Shot names are filled for [^.]*\.", shot, text)
 
 
+# The README and the docs that took over its long tables. Each file is filled by the same patterns, and a pattern a file does not contain changes nothing there.
+FIGURE_DOCS = ["docs/dataset_readme.md", "docs/columns.md", "docs/results_and_quality.md", "docs/limitations.md"]
+
+
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "readme":
-        path = Path("docs/dataset_readme.md")
-        old = path.read_text()
-        new = fill_readme(old, figures())
+        current = figures()
+        changed = []
+        for name in FIGURE_DOCS:
+            path = Path(name)
+            old = path.read_text()
+            new = fill_readme(old, current)
+            if "--check" in sys.argv:
+                import difflib
+                print("".join(difflib.unified_diff(old.splitlines(True), new.splitlines(True), f"{name} now", f"{name} with new figures", n=0)), end="")
+            elif new != old:
+                path.write_text(new)
+                changed.append(name)
         if "--check" in sys.argv:
-            import difflib
-            print("".join(difflib.unified_diff(old.splitlines(True), new.splitlines(True), "README now", "README with new figures", n=0)) or "README figures are current")
+            print("README figures are checked")
         else:
-            path.write_text(new)
-            print("README figures written" if new != old else "README figures were already current")
+            print("README figures written in " + ", ".join(changed) if changed else "README figures were already current")
     else:
         print(json.dumps(figures(), indent=1))
